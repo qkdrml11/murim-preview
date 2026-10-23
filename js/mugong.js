@@ -156,7 +156,8 @@ G.mgUpgrade5 = function (S) {
     // 13-9·13-9-1: grade → 같은 위력(하승 → 유성 1성, 중승 → 유성 5성, 상승 → 단월 5성). 경지표 값과 비교해 높은 쪽, gsk만큼 +성, 경지 성 상한으로 자름
     const cap = Math.min(10, D.MCAP[S.realm] || 10), g = S.grade | 0, gm = g >= 2 ? 'swg' : 'sjg', gs = g >= 2 ? 5 : g === 1 ? 5 : 1, gk = S.gsk | 0;
     S.mg = { sjs: { s: Math.min(cap, sim), x: 0 }, sjg: { s: Math.min(cap, est), x: 0 } };
-    if (gm === 'swg') S.mg.swg = { s: Math.min(cap, Math.max(gs, est) + gk), x: 0 }; else S.mg.sjg.s = Math.min(cap, Math.max(gs, est) + gk);
+    const sv = Math.min(Math.max(cap, gs), Math.max(gs, est) + gk); // 옛 저장은 성을 잃지 않음: gsk 더한 부분만 상한으로 자름
+    if (gm === 'swg') S.mg.swg = { s: sv, x: 0 }; else S.mg.sjg.s = Math.max(S.mg.sjg.s, sv);
     S.mgMain = gm; S.mgSim = 'sjs'; S.mgSin = null; S.mgDan = []; S.mgAdapt = 0; S.mgXp = S.xp;
     if ((S.stats && S.stats.losses > 0) || S.turn >= 3) { S.mg.nrt = { s: 1, x: 0 }; S.mgSin = 'nrt'; S.mgNrtOffered = true; }
     for (const t in DAN_T) if (S.turn >= +t) S.mgDan.push(DAN_T[t]);

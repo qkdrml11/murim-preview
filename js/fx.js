@@ -21,7 +21,8 @@ FX.play = function (kind, p) {
   if (p.text != null) { while (FX.pops.length >= POPMAX) { const o = FX.pops.shift(); o.remove(); }
     const d = document.createElement('div'); d.className = 'dmg' + (kind === 'manual' ? ' big' : ''); d.style.color = H[2]; d.style.fontSize = H[3] + 'px'; d.style.left = (p.side === 'e' ? 50 + Math.random() * 30 : 15 + Math.random() * 30) + '%'; d.textContent = p.text;
     el.appendChild(d); FX.pops.push(d); const life = kind === 'manual' || kind === 'pskill' ? 900 : 700; setTimeout(() => { d.remove(); const i = FX.pops.indexOf(d); if (i >= 0) FX.pops.splice(i, 1); }, life); }
-  if (FX.opt.shake && H[1] && FX.opt.fx !== '낮음') { const a = el.closest('.duel') ? el : el; a.style.transform = 'translate(' + (Math.random() < 0.5 ? -H[1] : H[1]) + 'px,0)'; setTimeout(() => { a.style.transform = ''; }, 90); }
+  if (FX.opt.shake && H[1]) { FX.stat.shake = (FX.stat.shake || 0) + 1; }
+  if (FX.opt.shake && H[1]) { const a = el.closest('.duel') ? el : el; a.style.transform = 'translate(' + (Math.random() < 0.5 ? -H[1] : H[1]) + 'px,0)'; setTimeout(() => { a.style.transform = ''; }, 90); }
   if (FX.opt.vib && H[4] && root.navigator && navigator.vibrate) try { navigator.vibrate(H[4]); } catch (e) {}
   if (FX.ctx && (kind === 'pskill' || kind === 'manual' || kind === 'parryok' || kind === 'ctr')) { const w = FX.el.clientWidth, h = FX.el.clientHeight, n = Math.round((kind === 'manual' ? 18 : 10) * PMUL());
     for (let i = 0; i < n && FX.parts.length < PMAX(); i++, FX.stat.parts++) FX.parts.push({ x: w * (p.side === 'e' ? 0.3 : 0.7), y: h * 0.5, vx: (Math.random() - 0.5) * 220, vy: (Math.random() - 0.7) * 220, life: 0.5, c: H[2] }); }
