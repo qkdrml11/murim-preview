@@ -63,7 +63,7 @@ svg.map{width:100%;height:52vh;min-height:150px;max-height:540px;display:block;t
 #bubble .who{font-weight:700;color:#92400e}
 #bubble .bb{display:flex;gap:6px;justify-content:flex-end;margin-top:6px}
 #bubble button{background:#e7e5e4;color:#292524;min-height:44px;font-size:13px}
-#overlay{position:absolute;inset:0;z-index:40;background:#0c0a09f2;display:flex;flex-direction:column;padding:10px;overflow:auto}
+#overlay{position:absolute;inset:0;z-index:40;background:#0c0a09;display:flex;flex-direction:column;padding:10px;overflow:auto}
 #modal{position:absolute;inset:0;z-index:60;background:#000a;display:flex;align-items:flex-end}
 .sheet{width:100%;background:#292524;border-radius:18px 18px 0 0;padding:14px 14px 18px;max-height:88%;overflow:auto;border-top:2px solid #b45309}
 .sheet h2{margin:0 0 8px;font-size:18px}
@@ -146,7 +146,10 @@ body.narrow button.sm{min-width:50px}body.narrow #narrow button{min-height:50px}
 .duel.f20 .stage{min-height:110px}
 .stage canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .stage .who{width:72px;height:96px;display:flex;align-items:center;justify-content:center}
-.stage.flash{box-shadow:inset 0 0 0 3px #fde68a}
+.stage.flash{box-shadow:inset 0 0 0 3px #fde68a,inset 0 0 60px #fde68a99}
+.stage.flashs{box-shadow:inset 0 0 0 3px #fde68a33,inset 0 0 60px #fde68a33}
+.stage.hurt{box-shadow:inset 0 0 0 4px #ef4444aa}
+.stage.hurts{box-shadow:inset 0 0 0 4px #ef444426}
 .dmg.big{font-weight:900}
 .duel .dlog{height:30px;font-size:11px}
 .qi{position:relative;height:4px;background:#1e293b;border-radius:2px;margin-top:4px;overflow:visible}
@@ -194,4 +197,10 @@ body.narrow button.sm{min-width:50px}body.narrow #narrow button{min-height:50px}
 .hkc.on{border-color:#fbbf24}
 .hkc .w{height:6px;background:#a16207;border-radius:3px}
 .hkc .tq{width:22px;height:22px;border-radius:50%;border:2px solid var(--tc);font-size:10px;line-height:18px;text-align:center}
-.prevbadge{position:fixed;top:4px;right:4px;z-index:90;background:#7c3aed;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:9px;pointer-events:none}
+.prevbadge{position:fixed;bottom:4px;left:4px;opacity:.85;z-index:90;background:#7c3aed;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:9px;pointer-events:none}
+body.induel .prevbadge{display:none}
+body.induel #main{visibility:hidden}
+.hk.ready{border-color:#4aa3ff;box-shadow:0 0 0 2px #4aa3ff88;animation:rdy .6s ease-in-out infinite alternate}
+@keyframes rdy{to{box-shadow:0 0 8px 2px #4aa3ffcc}}
+@media (prefers-reduced-motion: reduce){.hk.ready{animation:none}}
+body.induel #bubble{display:none}

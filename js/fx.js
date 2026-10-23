@@ -7,10 +7,13 @@ const FX = { opt: { shake: true, fx: '보통', flash: false, vib: false }, el: n
 FX.H = { phit: [0, 0, '#e7e5e4', 14, 0], pcrit: [40, 2, '#fde047', 17, 0], pskill: [60, 3, '#fbbf24', 18, 0], manual: [90, 4, '#facc15', 20, 30], eskill: [60, 4, '#f87171', 17, 0],
   ehit: [0, 0, '#fca5a5', 13, 0], parryok: [120, 5, '#86efac', 20, 40], parryfail: [80, 6, '#ef4444', 19, 20], pheal: [0, 0, '#60a5fa', 15, 0], eheal: [0, 0, '#c084fc', 15, 0], pdodge: [0, 0, '#a5f3fc', 14, 0], ctr: [60, 3, '#34d399', 17, 0], roll: [0, 2, '#a5f3fc', 16, 0] };
 const PMAX = () => FX.opt.fx === '낮음' ? 60 : 150, POPMAX = 8;
+// 16-1-5 연출 수준: 높음 = 표 그대로 + 잔상 / 보통 = 파티클 70% / 낮음 = 파티클 40%·B2→B1·전화면 축약
+const PMUL = () => ({ 높음: 1, 보통: 0.7, 낮음: 0.4 })[FX.opt.fx] || 0.7;
+FX.stat = { parts: 0, flash: 0, soft: 0, trail: 0 };
 FX.attach = function (stage, canvas) { FX.el = stage; FX.cv = canvas; FX.ctx = canvas && canvas.getContext ? canvas.getContext('2d') : null; FX.resize(); };
 FX.resize = function () { const c = FX.cv; if (!c || !FX.el) return; const dpr = Math.min(2, root.devicePixelRatio || 1); c.width = Math.max(1, FX.el.clientWidth * dpr); c.height = Math.max(1, FX.el.clientHeight * dpr); if (FX.ctx) FX.ctx.setTransform(dpr, 0, 0, dpr, 0, 0); };
 // 번쩍임 1초 창 ≤ 3회
-FX.queue = function () { const n = performance.now(); FX.flashT = FX.flashT.filter(t => n - t < 1000); if (FX.flashT.length >= 3 || FX.opt.flash) return false; FX.flashT.push(n); return true; };
+FX.queue = function () { const n = performance.now(); FX.flashT = FX.flashT.filter(t => n - t < 1000); if (FX.flashT.length >= 3) return false; FX.flashT.push(n); return true; };
 // 히트스톱 1초 합 ≤ 200ms (2×면 ÷2, 즉시·자동 파훼면 0) — 반환 = 이번 정지 ms
 FX.hitstop = function (ms, speed, instant) { if (instant || !ms) return 0; ms = ms / (speed >= 2 ? 2 : 1); const n = performance.now(); FX.hitBudget = FX.hitBudget.filter(x => n - x[0] < 1000); const used = FX.hitBudget.reduce((a, x) => a + x[1], 0); ms = Math.max(0, Math.min(ms, 200 - used)); if (ms) FX.hitBudget.push([n, ms]); return ms; };
 FX.play = function (kind, p) {
@@ -20,15 +23,16 @@ FX.play = function (kind, p) {
     el.appendChild(d); FX.pops.push(d); const life = kind === 'manual' || kind === 'pskill' ? 900 : 700; setTimeout(() => { d.remove(); const i = FX.pops.indexOf(d); if (i >= 0) FX.pops.splice(i, 1); }, life); }
   if (FX.opt.shake && H[1] && FX.opt.fx !== '낮음') { const a = el.closest('.duel') ? el : el; a.style.transform = 'translate(' + (Math.random() < 0.5 ? -H[1] : H[1]) + 'px,0)'; setTimeout(() => { a.style.transform = ''; }, 90); }
   if (FX.opt.vib && H[4] && root.navigator && navigator.vibrate) try { navigator.vibrate(H[4]); } catch (e) {}
-  if (FX.ctx && FX.opt.fx !== '낮음' && (kind === 'pskill' || kind === 'manual' || kind === 'parryok' || kind === 'ctr')) { const w = FX.el.clientWidth, h = FX.el.clientHeight, n = kind === 'manual' ? 18 : 10;
-    for (let i = 0; i < n && FX.parts.length < PMAX(); i++) FX.parts.push({ x: w * (p.side === 'e' ? 0.3 : 0.7), y: h * 0.5, vx: (Math.random() - 0.5) * 220, vy: (Math.random() - 0.7) * 220, life: 0.5, c: H[2] }); }
-  if ((kind === 'parryok' || kind === 'manual') && FX.queue()) { el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 120); }
+  if (FX.ctx && (kind === 'pskill' || kind === 'manual' || kind === 'parryok' || kind === 'ctr')) { const w = FX.el.clientWidth, h = FX.el.clientHeight, n = Math.round((kind === 'manual' ? 18 : 10) * PMUL());
+    for (let i = 0; i < n && FX.parts.length < PMAX(); i++, FX.stat.parts++) FX.parts.push({ x: w * (p.side === 'e' ? 0.3 : 0.7), y: h * 0.5, vx: (Math.random() - 0.5) * 220, vy: (Math.random() - 0.7) * 220, life: 0.5, c: H[2] }); }
+  if ((kind === 'parryok' || kind === 'manual') && FX.queue()) { const c = FX.opt.flash ? 'flashs' : 'flash'; FX.stat.flash++; if (FX.opt.flash) FX.stat.soft++; el.classList.add(c); setTimeout(() => el.classList.remove(c), 120); }
+  if (kind === 'parryfail' && FX.queue()) { const c = FX.opt.flash ? 'hurts' : 'hurt'; el.classList.add(c); setTimeout(() => el.classList.remove(c), 160); }
   return H[0];
 };
-FX.frame = function (dt) { const c = FX.ctx; if (!c || !FX.el) return; const w = FX.el.clientWidth, h = FX.el.clientHeight; c.clearRect(0, 0, w, h);
+FX.frame = function (dt) { const c = FX.ctx; if (!c || !FX.el) return; const w = FX.el.clientWidth, h = FX.el.clientHeight; if (FX.opt.fx === '높음') { FX.stat.trail++; c.globalCompositeOperation = 'destination-out'; c.fillStyle = 'rgba(0,0,0,0.45)'; c.fillRect(0, 0, w, h); c.globalCompositeOperation = 'source-over'; } else c.clearRect(0, 0, w, h);
   FX.parts = FX.parts.filter(q => (q.life -= dt) > 0); for (const q of FX.parts) { q.x += q.vx * dt; q.y += q.vy * dt; q.vy += 300 * dt; c.globalAlpha = Math.max(0, q.life * 2); c.fillStyle = q.c; c.fillRect(q.x, q.y, 3, 3); } c.globalAlpha = 1; };
 // 배너 B1 800ms · B2 1,200ms
-FX.banner = function (text, ms, cls) { const el = FX.el; if (!el) return; const b = document.createElement('div'); b.className = 'banner ' + (cls || ''); b.textContent = text; el.appendChild(b); setTimeout(() => b.remove(), ms || 800); };
+FX.banner = function (text, ms, cls) { const el = FX.el; if (!el) return; if (cls === 'b2' && FX.opt.fx === '낮음') { cls = 'b1'; ms = 800; } const b = document.createElement('div'); b.className = 'banner ' + (cls || ''); b.textContent = text; el.appendChild(b); setTimeout(() => b.remove(), ms || 800); };
 // B3 전화면(처음 1,600ms, 본 뒤 600ms, 낮음이면 600ms) — 탭하면 0.4초로 줄인다
 FX.full = function (text, seen) { return new Promise(res => { const ov = document.createElement('div'); ov.className = 'fxfull'; ov.textContent = text; const ms = (seen || FX.opt.fx === '낮음') ? 600 : 1600; let done = false;
   const end = () => { if (done) return; done = true; ov.remove(); setTimeout(res, 250); }; ov.onclick = () => setTimeout(end, 400); (FX.el && FX.el.closest('.duel') || document.body).appendChild(ov); setTimeout(end, ms); }); };

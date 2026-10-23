@@ -329,9 +329,9 @@ function duelUI(e, opts, cfg) {
     const seed = G.duelSeed ? G.duelSeed() : 0, p = G.me();
     const d = new DuelLib.Duel(p, e.slice(0, 7), o, G.rand, seed);
     const used = new Set(), firstNew = []; let manN = 0;
-    const end = (win) => { if (G.mgDuelEnd) G.mgDuelEnd(win, cfg.w, { used: [...used] }); G.inDuel = false; };
+    const end = (win) => { if (G.mgDuelEnd) G.mgDuelEnd(win, cfg.w, { used: [...used] }); G.inDuel = false; document.body.classList.remove('induel'); };
     if (d.auto !== null) { G.toast((d.auto ? '압도: ' : '역부족: ') + (e[7] || '상대') + ' (경지 차 2 이상, 자동 판정)'); s.lastDuel = { nm: e[7], win: d.auto, t: 1, gise: 0, ok: 0, log: ['경지 차 자동 판정'] }; end(d.auto); flushToasts(); return resolve(d.auto); }
-    G.inDuel = true; if (window.FX) FX.opt = Object.assign({}, FX.opt, s.opt || {});
+    G.inDuel = true; document.body.classList.add('induel'); if (window.FX) FX.opt = Object.assign({}, FX.opt, s.opt || {});
     const ov = $('#overlay'); ov.classList.remove('hidden');
     const nm = e[7] || '상대', f20 = d.f20, hot = f20 ? d.hot : [];
     const es = d.eset ? ' · ' + d.eset.mg : '';
@@ -352,7 +352,8 @@ function duelUI(e, opts, cfg) {
     const btnState = () => {
       if (!f20) return; const prevQ = btnState.q == null ? d.qi : btnState.q; btnState.q = d.qi;
       ov.querySelectorAll('.hk').forEach(b => { const pi = +b.dataset.pi, c = d.pool[pi], cd = d.cdLeft(pi), wheel = d.deck.has(pi) && d.deck.size < d.n, low = d.qi < c.qi;
-        const res = d.reserve === pi, can = d.canReserve(pi) && !c.lock;
+        const res = d.reserve === pi, can = d.canReserve(pi) && !c.lock, near = d.hist.length && d.ns - d.t <= 10 && !d.waiting;
+        b.classList.toggle('ready', !!(near && can && !res));
         b.classList.toggle('res', res); b.classList.toggle('low', low && !res); b.classList.toggle('cd', (cd > 0 || wheel) && !res); b.classList.toggle('gs', d.waiting); b.classList.toggle('lockd', !!c.lock);
         b.querySelector('.cdr').style.background = cd > 0 ? 'conic-gradient(#0009 ' + Math.min(100, cd / d.cdOf(pi, false) * 100) + '%, transparent 0)' : 'none';
         const st = res ? '예약' : c.lock ? '초절정부터' : cd > 0 ? (cd / 10).toFixed(1) + '초' : wheel ? '바퀴' : low ? Math.ceil((c.qi - d.qi) / (D.DUEL.QI_REG)) + '초 · 파훼 +25' : '';

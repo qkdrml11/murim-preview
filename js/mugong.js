@@ -32,7 +32,7 @@ G.learnSkill = function (id, src) {
   let tx = mg.desc + (G.mgSealed(id) ? '\n(일류가 되기 전엔 봉인 — 일류부터 펼칠 수 있다)' : '');
   if (mg.cat === '신법' && !S.mgSin) S.mgSin = id;
   if (mg.cat === '심법' && (!S.mgSim || mg.grade > D.MG[S.mgSim].grade)) S.mgSim = id;
-  G.push({ type: 'info', title: '무공 습득 · ' + mg.name + (mg.hanja ? ' (' + mg.hanja + ')' : ''), text: D.GNAME[mg.grade] + ' ' + mg.cat + (mg.wpn ? '·' + mg.wpn : '') + ' · 성향 ' + mg.tend + '\n' + tx });
+  G.push({ type: 'info', title: '무공 습득 · ' + mg.name + (mg.hanja ? ' (' + mg.hanja + ')' : ''), text: D.GNAME[mg.grade] + ' ' + mg.cat + (mg.wpn ? '·' + mg.wpn : '') + ' · 성향 ' + mg.tend + '\n' + tx + (mg.cat === '외공' && id !== S.mgMain ? '\n\n주 외공이 아니면 이 무공의 초식은 핫키 후보에 바로 나오지 않는다. 캐릭터 → 무공 탭에서 [주로]를 누르면 주 외공으로 바꿀 수 있다.' : '') });
   if (mg.cat === '외공' && mg.wpn !== '호신' && mg.grade > D.MG[S.mgMain].grade) G.push({ type: 'choice', title: '주 외공을 바꿀까?', text: mg.name + '(' + D.GNAME[mg.grade] + ')을 주 외공으로 삼으면 초식 칸이 바뀐다. 바꾼 뒤 3싸움 동안은 손에 익을 때까지 +2성으로 친다.', opts: ['바꾼다', '그대로 둔다'], cb: 'mgSwapPick', arg: id });
   G.hotFillNew(); return true;
 };
@@ -153,7 +153,11 @@ G.mgUpgrade5 = function (S) {
   S.naegong = Math.round((NEED_SUM(S.realm) + (S.xp || 0) + ((S.off && S.off.reserve) || 0)) / 100 * 10) / 10;
   S.kkae = Math.max(S.kkae || 0, KKAE0[S.realm] || 0); S.kkSeen = S.kkSeen || [];
   if (!S.mg) { const est = { 1: 1, 2: 3, 3: 5, 4: 7, 5: 9 }[S.realm] || 1, sim = { 1: 1, 2: 2, 3: 3, 4: 5, 5: 6 }[S.realm] || 1;
-    S.mg = { sjs: { s: sim, x: 0 }, sjg: { s: est, x: 0 } }; S.mgMain = 'sjg'; S.mgSim = 'sjs'; S.mgSin = null; S.mgDan = []; S.mgAdapt = 0; S.mgXp = S.xp;
+    // 13-9·13-9-1: grade → 같은 위력(하승 → 유성 1성, 중승 → 유성 5성, 상승 → 단월 5성). 경지표 값과 비교해 높은 쪽, gsk만큼 +성, 경지 성 상한으로 자름
+    const cap = Math.min(10, D.MCAP[S.realm] || 10), g = S.grade | 0, gm = g >= 2 ? 'swg' : 'sjg', gs = g >= 2 ? 5 : g === 1 ? 5 : 1, gk = S.gsk | 0;
+    S.mg = { sjs: { s: Math.min(cap, sim), x: 0 }, sjg: { s: Math.min(cap, est), x: 0 } };
+    if (gm === 'swg') S.mg.swg = { s: Math.min(cap, Math.max(gs, est) + gk), x: 0 }; else S.mg.sjg.s = Math.min(cap, Math.max(gs, est) + gk);
+    S.mgMain = gm; S.mgSim = 'sjs'; S.mgSin = null; S.mgDan = []; S.mgAdapt = 0; S.mgXp = S.xp;
     if ((S.stats && S.stats.losses > 0) || S.turn >= 3) { S.mg.nrt = { s: 1, x: 0 }; S.mgSin = 'nrt'; S.mgNrtOffered = true; }
     for (const t in DAN_T) if (S.turn >= +t) S.mgDan.push(DAN_T[t]);
     if (S.kyOnce && S.kyOnce['유골'] && S.grade >= 1) S.mg.cmy = { s: 1, x: 0 }; }
