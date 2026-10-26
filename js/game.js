@@ -376,11 +376,14 @@ export function createGame(opts = {}) {
     const mk = role => ({ id: 'r' + state.month + Math.floor(rng.next() * 1e5), name: ronin.name, doho: '', byeolho: foe.realm >= 3 ? ronin.byeolho : '', nick: foe.realm >= 3 ? '' : ronin.byeolho, role,
       realm: foe.realm, meridians: foe.meridians, arts: { ...foe.arts }, simbeop: foe.simbeop, talent: { geun: rng.int(1, 2), oseong: rng.int(0, 2), sangjae: rng.int(0, 1) }, reveal: { geun: role === 'gaekgyeong' ? 2 : 1, oseong: 1, sangjae: 0 }, hints: {},
       tp: 0, task: null, injured: 0, discontent: 0, loyalty: 50, trainMonths: 0, bizMonths: 0, joined: state.month, ronin: true });
+    const opp = (SIKGAEK.oppositeCamps[SIKGAEK.myCamp] || []).includes(ronin.camp);
+    const warn = opp ? '\n' + SIKGAEK.campWarningText(ronin.camp) : '';
+    const lean = () => { if (!opp) return; state.campLean = state.campLean || {}; state.campLean[ronin.camp] = (state.campLean[ronin.camp] || 0) + SIKGAEK.campLeanOnAccept; };
     if (!win) {
       if (!state.buildings.gaekbang) { g.notify(`${ronin.name}: "이 문파가 마음에 드는군. 객방이 생기면 다시 오겠소."`, { kind: 'big' }); state.ronin.revisit = { month: state.month + rng.int(3, 12), ronin, foe }; return; }
-      return g.ask({ title: `${ronin.name}이(가) 남고 싶어 합니다`, body: '"이 문파가 마음에 드는군." 객경으로 모실까요? (생활비 + 예우비 10냥)', choices: [{ id: 'yes', label: '받기', primary: true }, { id: 'no', label: '사양' }] }, c => { if (c === 'yes') { state.people.push(mk('gaekgyeong')); g.notify(`${ronin.name}이(가) 객경으로 머물러요.`, { kind: 'big' }); bus.emit('changed'); } });
+      return g.ask({ title: `${ronin.name}이(가) 남고 싶어 합니다`, body: '"이 문파가 마음에 드는군." 객경으로 모실까요? (생활비 + 예우비 10냥)' + warn, choices: [{ id: 'yes', label: '받기', primary: true }, { id: 'no', label: '사양' }] }, c => { if (c === 'yes') { lean(); state.people.push(mk('gaekgyeong')); g.notify(`${ronin.name}이(가) 객경으로 머물러요.`, { kind: 'big' }); bus.emit('changed'); } });
     }
-    g.ask({ title: `${ronin.name}이(가) 남고 싶어 합니다`, body: '"곁에 머물며 배우고 싶소."', choices: [{ id: 'yes', label: '받기', primary: true }, { id: 'no', label: '사양' }] }, c => {
+    g.ask({ title: `${ronin.name}이(가) 남고 싶어 합니다`, body: '"곁에 머물며 배우고 싶소."' + warn, choices: [{ id: 'yes', label: '받기', primary: true }, { id: 'no', label: '사양' }] }, c => {
       if (c !== 'yes') return;
       const hasSokga = false; // 속가(무관)는 다음 업데이트
       g.ask({ title: '어떤 자리로 받을까요?', body: `내제자: 입문례 50냥 · 생활비 ${LIVING[foe.realm]}냥 · 본문 무공을 배워요\n식객: 비용 0 · 생활비 절반 · 머물기·의뢰·습격만, 본문 무공은 못 배워요\n속가제자: 속가(무관)가 있어야 해요`,
@@ -388,6 +391,7 @@ export function createGame(opts = {}) {
         if (role === 'naeje') { state.silver -= 50; const p = mk('naeje'); p.doho = '하' + rng.pick(DOHO_SECOND); state.people.push(p); }
         else if (role === 'sikgaek') state.people.push(mk('sikgaek'));
         else return;
+        lean();
         g.notify(`${ronin.name}이(가) ${ROLE_NAME[role]}(으)로 청운문에 머물러요.`, { kind: 'big' }); checkAchievements(); bus.emit('changed');
       });
     });
@@ -509,7 +513,7 @@ export function createGame(opts = {}) {
     // 이탈(§5-4 ②-1) · 식객(v7.4: 마지막 제자 보호 없음, 불만 70 넘으면 바로)
     for (const p of [...state.people]) {
       if (p.role === 'sikgaek') {
-        const leave = p.discontent > SIKGAEK.leaveDiscontent || ((state.month - p.joined) > 0 && (state.month - p.joined) % 12 === 0 && rng.chance(SIKGAEK.yearlyLeaveChance));
+        const leave = p.discontent > SIKGAEK.leaveDiscontent || ((state.month - p.joined) > 0 && (state.month - p.joined) % 12 === 0 && p.loyalty < SIKGAEK.loyalStayLoyalty && rng.chance(SIKGAEK.yearlyLeaveChance));
         if (leave) { if (p.task) g.cancelTask(p.task); state.people = state.people.filter(x => x !== p); g.notify(`식객 ${p.name}: "다시 길을 떠나겠소."`, { kind: 'alert' }); }
       } else if (p.role === 'naeje' && p.discontent >= 70) {
         const naeje = state.people.filter(x => x.role === 'naeje');
@@ -566,7 +570,7 @@ export function createGame(opts = {}) {
   g.bizIncome = (pl, b) => bizIncome(state, pl, b);
   g.living = p => livingCost(state, p, state.month);
   g.stayCost = id => stayCost(state, id);
-  g._ev = { roninEvent, rollRonin, monthEnd }; // 테스트용
+  g._ev = { roninEvent, rollRonin, monthEnd, roninStayRoll }; // 테스트용
   g.BUILDINGS = BUILDINGS; g.TASKS = TASKS; g.BIZ = BIZ; g.PROVINCES = PROVINCES;
   return g;
 }

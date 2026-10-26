@@ -118,3 +118,16 @@ test('식객(v7.4): 생활비 절반, 본문 무공 못 배움, 할 수 있는 �
   s.people = s.people.filter(p => p.role === 'master' || p.id === 'sx'); sk.discontent = 80; g._ev.monthEnd();
   assert.equal(s.people.some(p => p.id === 'sx'), false);
 });
+test('v7.4.1: 충성 70 이상 식객은 1년 떠남 굴림 없음', () => {
+  const mk = (id, loyalty) => ({ id, name: id, role: 'sikgaek', realm: 2, meridians: 4, arts: {}, talent: { geun: 1, oseong: 1, sangjae: 0 }, reveal: {}, hints: {}, tp: 0, task: null, injured: 0, discontent: 0, loyalty, joined: 0 });
+  const g = fresh(); const s = g.state; s.people.push(mk('hi', 70), mk('lo', 69)); s.month = 12; g.rng.chance = () => true;
+  g._ev.monthEnd();
+  assert.ok(s.people.some(p => p.id === 'hi')); assert.ok(!s.people.some(p => p.id === 'lo'));
+});
+test('v7.4.1: 반대 진영 낭인만 경고 한 줄, 받으면 +2 기울기', () => {
+  const run = (camp, pick) => { const bodies = []; const g = fresh({ answer: sp => { bodies.push(sp.body); return /어떤 자리/.test(sp.title) ? 'sikgaek' : pick; } }); g.rng.chance = () => true;
+    g._ev.roninStayRoll({ name: '갑', byeolho: '검', camp }, { realm: 2, meridians: 4, arts: {}, simbeop: null }, true); return { g, b: bodies[0] }; };
+  const a = run('사파', 'yes'); assert.ok(a.b.includes('받으면 진영이 사파 쪽으로 +2 기울어요')); assert.equal(a.g.state.campLean.사파, 2);
+  const r = run('사파', 'no'); assert.ok(!(r.g.state.campLean || {}).사파);
+  for (const c of ['정파', '중립']) { const x = run(c, 'yes'); assert.ok(!x.b.includes('기울어요')); assert.ok(!(x.g.state.campLean || {})[c]); }
+});

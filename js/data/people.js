@@ -27,12 +27,12 @@ export const FOES = {
   guchil:     { name: '구칠', byeolho: '외눈', realm: 2, meridians: 4, arts: { heukpung: 3 }, simbeop: '하승', style: 'sapa', fake: 0.3 },
 };
 export const RONIN = [ // 이름, 별호, 최소~최대 경지, 버릇
-  { name: '노삼', byeolho: '철검', realms: [2, 2], fake: 0.1, habit: 'none' },
-  { name: '허진', byeolho: '외팔 도객', realms: [2, 3], fake: 0.3, habit: 'def' },
-  { name: '곽소매', byeolho: '쌍비수', realms: [3, 3], fake: 0.3, habit: 'evade' },
-  { name: '묵장', byeolho: '흑창', realms: [3, 4], fake: 0.3, habit: 'atk' },
-  { name: '연사구', byeolho: '취검', realms: [4, 4], fake: 0.5, habit: 'random' },
-  { name: '단목휘', byeolho: '백의 서생검', realms: [4, 4], fake: 0.3, habit: 'big' },
+  { name: '노삼', camp: '중립', byeolho: '철검', realms: [2, 2], fake: 0.1, habit: 'none' },
+  { name: '허진', camp: '정파', byeolho: '외팔 도객', realms: [2, 3], fake: 0.3, habit: 'def' },
+  { name: '곽소매', camp: '사파', byeolho: '쌍비수', realms: [3, 3], fake: 0.3, habit: 'evade' },
+  { name: '묵장', camp: '사파', byeolho: '흑창', realms: [3, 4], fake: 0.3, habit: 'atk' },
+  { name: '연사구', camp: '중립', byeolho: '취검', realms: [4, 4], fake: 0.5, habit: 'random' },
+  { name: '단목휘', camp: '정파', byeolho: '백의 서생검', realms: [4, 4], fake: 0.3, habit: 'big' },
 ];
 export const RECRUIT_SURNAMES = ['김', '이', '박', '최', '정', '강', '조', '윤', '장', '임', '한', '오', '서', '신', '권', '황', '송', '류'];
 export const RECRUIT_GIVEN = ['도윤', '서진', '하람', '지후', '민재', '태오', '수아', '연우', '은호', '재희', '시율', '가온', '로운', '이준', '다온', '유찬'];
@@ -47,7 +47,10 @@ export const ROLE_NAME = { master: '장문인', naeje: '내제자', sokga: '속�
 // 식객 규칙(§5-6 ③-1 v7.4). 떠날 조건·진영 경고 문구는 아직 확정 전이라 값만 여기 모아 둬요(바꾸기 쉽게).
 export const SIKGAEK = {
   costMul: 0.5, tasks: ['stay', 'request', 'raid'], canLearnSectArts: false, lastDiscipleProtection: false,
-  leaveDiscontent: 70, yearlyLeaveChance: 0.2, joinOfferAfterMonths: 12, joinOfferLoyalty: 70, hintBonus: 0.1,
-  pending: true, campWarningText: '(진영 경고 문구 — 기획 확정 전)',
+  leaveDiscontent: 70, yearlyLeaveChance: 0.2, loyalStayLoyalty: 70, // v7.4.1: 충성 70 이상이면 1년 굴림 없음
+  joinOfferAfterMonths: 12, joinOfferLoyalty: 70, hintBonus: 0.1,
+  pending: true, // v7.4.1 추천안 — 태현님 확인 대기
+  myCamp: '정파', oppositeCamps: { 정파: ['사파', '마교'] }, campLeanOnAccept: 2,
+  campWarningText: c => `받으면 진영이 ${c} 쪽으로 +2 기울어요`,
 };
 export const RONIN_STAY = { winChance: 0.15, loseChance: 0.03, perYear: 1 };
