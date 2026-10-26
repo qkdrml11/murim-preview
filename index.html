@@ -2,38 +2,54 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<meta name="theme-color" content="#1c1917">
-<title>강호쟁패 (가제) — 1단계 프로토타입</title>
-<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#efe6d2">
+<title>청운문 — 강호 수묵</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <filter id="brush" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="3" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="3"/></filter>
+    <filter id="bleed"><feGaussianBlur stdDeviation="0.6"/></filter>
+  </defs>
+</svg>
 <div id="app">
-  <div id="start" class="screen"></div>
-  <div id="main" class="screen hidden">
-    <header id="top"></header>
-    <main id="content"></main>
-    <nav id="tabs">
-      <button data-tab="map" class="on">🗺️<span>지도</span></button>
-      <button data-tab="char">🧘<span>인물</span></button>
-      <button data-tab="base">🏮<span>거점</span></button>
-    </nav>
+  <header id="hud">
+    <div class="hud-l">
+      <div class="hud-sub" id="hudSub">귀주 · 청운문</div>
+      <div class="hud-date" id="hudDate">강호력 1년 봄 3월</div>
+      <div class="mprog"><i id="mprog"></i></div>
+    </div>
+    <div class="hud-r">
+      <button class="chip" id="chipSilver" data-tab="biz"><b>은자</b><span id="vSilver">400</span></button>
+      <button class="chip" id="chipFame" data-tab="news"><b>명성</b><span id="vFame">10</span></button>
+    </div>
+  </header>
+  <button id="goal" class="goal"><span class="goal-k">목표</span><span id="goalText"></span></button>
+  <div id="toasts"></div>
+  <main id="mapWrap">
+    <canvas id="map"></canvas>
+    <div id="legend"></div>
+    <div id="mapCtl">
+      <div class="seg" id="levelSeg"><button data-l="0">천하</button><button data-l="1">성</button><button data-l="2">고을</button></div>
+      <button class="mbtn" id="btnHome">⛩ 내 본산</button>
+    </div>
+  </main>
+  <div id="speedBar">
+    <button data-s="0" class="sp"><i class="ic">❚❚ </i>멈춤</button><button data-s="1" class="sp"><i class="ic">▶ </i>1배</button><button data-s="2" class="sp"><i class="ic">▶▶ </i>2배</button><button data-s="4" class="sp"><i class="ic">▶▶▶ </i>4배</button>
   </div>
-  <div id="bubble" class="hidden"></div>
-  <div id="overlay" class="hidden"></div>
-  <div id="modal" class="hidden"></div>
-  <div id="narrow" class="hidden">화면이 좁아 조금 작게 보입니다 <button id="narrowX" aria-label="닫기">✕</button></div>
-  <div id="rot" class="hidden"><div>📱↻<br>세로로 돌려 주세요</div></div>
-  <div id="toast"></div>
-  <div id="dbg" class="hidden"></div>
+  <div id="people"><div class="people-hint">밝은 사람 = 쉬는 중 · 눌러서 일 맡기기</div><div id="peopleRow"></div></div>
+  <nav id="tabs">
+    <button data-tab="map" class="on">지도</button><button data-tab="sect">문파</button><button data-tab="biz">살림</button><button data-tab="mugong">무공</button><button data-tab="news">강호소식<i id="newsDot"></i></button>
+  </nav>
+  <section id="panel" class="panel" aria-hidden="true"><div class="panel-head"><span id="panelTitle"></span><button id="panelClose" aria-label="닫기">✕</button></div><div id="panelBody"></div></section>
+  <section id="sheet" class="sheet" aria-hidden="true"><div class="grab"></div><div id="sheetBody"></div></section>
+  <div id="scrim"></div>
+  <div id="modalLayer"></div>
+  <div id="duel" aria-hidden="true"></div>
+  <div id="badge" hidden>미리보기</div>
 </div>
-<script src="js/data.js"></script>
-<script src="js/mugong_data.js"></script>
-<script src="js/duel.js"></script>
-<script src="js/fx.js"></script>
-<script src="js/game.js"></script>
-<script src="js/mugong.js"></script>
-<script src="js/ui.js"></script>
+<script type="module" src="js/main.js"></script>
 </body>
 </html>
