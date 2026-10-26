@@ -64,14 +64,13 @@ test('일기토: 4초 넘김 = 막기, 예상 승률·자동 −5%p', () => {
   const p = estimate(F(3), F(3), 100); assert.ok(p > 0.2 && p < 0.9);
   const a = resolveAuto(F(3), F(3), makeRng(9), 0.6); assert.ok(Math.abs(a.p - 0.55) < 1e-9); assert.ok(a.highlights.length >= 1 && a.highlights.length <= 3);
 });
-test('자동 해금(v7.5): 6달째 시작에 순서표대로, 직접 3번이면 다음 달 맨 앞으로', () => {
-  const g2 = createGame({ headless: true, seed: 5, answer: s => s.choices[s.choices.length - 1].id }); g2.endIntro(); g2.advanceMonths(5);
-  assert.equal(g2.state.duels.unlocked, true); assert.equal(g2.state.duels.unlockedAt, 6); assert.ok(g2.state.log.some(l => l.t === UNLOCK_TEXT));
-  const g = createGame({ headless: true, seed: 5, duelMode: () => 'manual', manualResult: () => true }); g.endIntro(); g.advanceMonths(1); // 2달째: biz_inn 열림
+test('자동 해금(v7.6.3): 화면 7달 시작에 순서표대로, 직접 3번이면 그 자리에서', () => {
+  const g2 = createGame({ headless: true, seed: 5, answer: s => s.choices[s.choices.length - 1].id }); g2.endIntro(); g2.advanceMonths(6);
+  assert.equal(g2.state.duels.unlocked, true); assert.equal(g2.state.duels.unlockedAt, 7); assert.ok(g2.state.log.some(l => l.t === UNLOCK_TEXT));
+  const g = createGame({ headless: true, seed: 5, duelMode: () => 'manual', manualResult: () => true }); g.endIntro(); g.advanceMonths(2); // 화면 3달: biz_inn
   for (let i = 0; i < 3; i++) g.requestDuel({ ally: g.person('p0'), foe: F(2), onResult() {} });
-  assert.equal(g.isOpen('auto'), false, '같은 달엔 안 열림');
-  g.advanceMonths(1); assert.equal(g.isOpen('auto'), true); assert.equal(g.isOpen('duel'), false, '그달 다른 해금은 한 달 밀림');
-  g.advanceMonths(1); assert.equal(g.isOpen('duel'), true);
+  assert.equal(g.isOpen('auto'), true, '3번째 결과에서 바로');
+  g.advanceMonths(1); assert.equal(g.isOpen('duel'), true, '다른 해금은 안 밀림');
 });
 test('낭인(v7.3): 명성 20~299·절정 이하일 때만, 3달 안엔 안 옴, 문지기는 약한 내제자 이하를 돌려보냄', () => {
   const g = fresh(); const s = g.state; s.flags.eventA = true; s.ronin.last = -99;
@@ -134,14 +133,15 @@ test('v7.4.1/v7.5 §5-7 ②-1: 반대 진영 낭인만 경고 한 줄, 받으면
   for (const c of ['정파', '중립', '세외']) { const x = run(c, 'yes'); assert.ok(!x.b.includes('기울어요')); assert.deepEqual(x.s.lean, { jeong: 0, sa: 0, ma: 0 }); }
   const sa = run('정파', 'yes', '사파'); assert.ok(sa.b.includes('정파 쪽으로')); assert.equal(sa.s.lean.jeong, 2);
 });
-test('해금(v7.5 §9): 새 게임은 수련·주막 돌보기만, 첫 달 중간 의뢰, 한 달에 하나, 운봉만 보임', () => {
+test('해금(v7.6.3 §9): 새 게임은 수련·주막 돌보기만, 화면 2달 의뢰, 한 달에 하나, 운봉만 보임', () => {
   const g = createGame({ headless: true, seed: 5 }); g.endIntro(); const s = g.state; const p2 = g.person('p2');
   assert.deepEqual(Object.keys(s.unlock.open), ['train', 'inn']); assert.equal(s.unlock.v, 1); assert.deepEqual(s.unlock.queue, []);
   assert.equal(g.canDo(p2, 'openJumak'), false); assert.equal(g.canDo(p2, 'request'), false); assert.equal(g.canDo(p2, 'train'), true); assert.equal(g.canDo(p2, 'manage'), true);
   assert.equal(g.visible('운봉'), true); assert.equal(g.visible('청석'), false);
-  g.setSpeed(1); g.tick(SEC_PER_MONTH * 0.55); assert.equal(g.isOpen('quest'), true); assert.equal(s.unlock.last, 1);
+  g.setSpeed(1); g.tick(SEC_PER_MONTH * 0.55); assert.equal(g.isOpen('quest'), false, '달 중간엔 안 열림');
+  g.advanceMonths(1); assert.equal(g.isOpen('quest'), true); assert.equal(s.unlock.last, 2);
   assert.ok(g.targets('request', p2).every(t => g.visible(String(t.id).split('#')[0])));
-  g.advanceMonths(1); assert.equal(s.month, 2); assert.equal(g.isOpen('biz_inn'), true); assert.equal(g.visible('청석'), true);
+  g.advanceMonths(1); assert.equal(s.month, 3); assert.equal(g.isOpen('biz_inn'), true); assert.equal(g.visible('청석'), true);
   assert.ok(g.targets('openJumak', p2).some(t => t.id === '청석')); assert.ok(!g.targets('openJumak', p2).some(t => t.id === '여울'));
   const before = Object.keys(s.unlock.open).length; s.unlock.queue.push('ledger'); g._ev.monthEnd(); assert.equal(Object.keys(s.unlock.open).length, before + 1, '한 달에 하나만');
   assert.equal(g.isOpen('duel'), true); assert.deepEqual(s.unlock.queue, ['ledger']);
@@ -191,4 +191,49 @@ test('v7.6.2 은자: 고정값 5냥 단위 · 계산값 1냥(Math.round) · 9달
   const sk = { role: 'sikgaek', realm: 2 }; assert.equal(livingCost(s, sk, 1), 8, '식객 이류 절반 7.5 → 8');
   s.month = 9; assert.match(g.benefitEndText(), /^다음 달부터 옛 의리 혜택이 끝나요 → 수지 [+−]\d+ → [+−]\d+$/);
   assert.equal(monthLedger(s, 9).net - monthLedger(s, 10).net, 30);
+});
+
+import { resolveSave, KEY_LIVE, KEY_PREVIEW, KEY_V5, KEY_OLD_PREVIEW, KEY_BACKUP } from '../js/systems/savekeys.js';
+import { isOurSave as ours } from '../js/game.js';
+const mem = init => { const m = new Map(Object.entries(init)); return { m, getItem: k => m.has(k) ? m.get(k) : null, setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k) }; };
+const NEW = JSON.stringify({ v: 2, fmt: 'nd', towns: {}, people: [] }), OLD = JSON.stringify({ v: 5, turn: 3, player: {} });
+test('v7.6.3 저장 키: 옮기기 · 예전 형식 안 건드림 · 백업 정리', () => {
+  let ls = mem({ [KEY_LIVE]: NEW, [KEY_V5]: OLD }); let r = resolveSave(ls, false, ours); assert.equal(r.raw, NEW); assert.equal(ls.getItem(KEY_V5), OLD);
+  ls = mem({ [KEY_V5]: NEW }); r = resolveSave(ls, false, ours); assert.equal(r.raw, NEW); assert.equal(ls.getItem(KEY_LIVE), NEW); assert.equal(ls.getItem(KEY_V5), null); assert.equal(r.oldFound, false);
+  ls = mem({ [KEY_V5]: OLD }); r = resolveSave(ls, false, ours); assert.equal(r.raw, null); assert.equal(ls.getItem(KEY_V5), OLD); assert.equal(r.oldFound, true); assert.equal(ls.getItem(KEY_LIVE), null);
+  ls = mem({ [KEY_OLD_PREVIEW]: NEW, [KEY_V5]: OLD }); r = resolveSave(ls, true, ours); assert.equal(r.key, KEY_PREVIEW); assert.equal(ls.getItem(KEY_PREVIEW), NEW); assert.equal(ls.getItem(KEY_OLD_PREVIEW), null); assert.equal(ls.getItem(KEY_V5), OLD);
+  // 백업 정리: v5 비었음 → 되돌림
+  ls = mem({ [KEY_BACKUP]: OLD }); r = resolveSave(ls, false, ours); assert.equal(ls.getItem(KEY_V5), OLD); assert.equal(ls.getItem(KEY_BACKUP), null); assert.equal(r.oldFound, true);
+  // v5가 새 형식(덮였던 경우) → 새 키로 옮기고 백업을 v5로
+  ls = mem({ [KEY_BACKUP]: OLD, [KEY_V5]: NEW }); r = resolveSave(ls, false, ours); assert.equal(ls.getItem(KEY_V5), OLD); assert.equal(ls.getItem(KEY_LIVE), NEW); assert.equal(r.raw, NEW); assert.equal(ls.getItem(KEY_BACKUP), null);
+  // v5가 이미 예전 형식 → 백업만 삭제
+  const OLD2 = JSON.stringify({ v: 5, turn: 9, player: {} });
+  ls = mem({ [KEY_BACKUP]: OLD, [KEY_V5]: OLD2 }); resolveSave(ls, false, ours); assert.equal(ls.getItem(KEY_V5), OLD2); assert.equal(ls.getItem(KEY_BACKUP), null);
+  assert.equal(ls.getItem('murim_save_v5_old052'), null);
+});
+test('v7.6.3 해금 달: 표 달 k = 화면 달 − 1, 새 달 시작에만', () => {
+  const g = createGame({ headless: true, seed: 3 }); g.endIntro(); const s = g.state;
+  g.setSpeed(1); g.tick(0); s.prog = 0.9; g.tick(0); assert.equal(g.isOpen('quest'), false, '1달 중간엔 안 열림');
+  g.advanceMonths(1); assert.equal(s.month, 2); assert.equal(g.isOpen('quest'), true, '화면 2달 시작에 의뢰'); assert.equal(g.isOpen('biz_inn'), false);
+  g.advanceMonths(1); assert.equal(g.isOpen('biz_inn'), true, '화면 3달');
+  g.advanceMonths(1); assert.equal(g.isOpen('duel'), true); assert.equal(g.isOpen('stay'), false, '화면 4달은 일기토까지');
+});
+test('v7.6.3 자동 설정: 3번째 직접 일기토 결과에서 바로 · 다른 해금 안 밀림 · 아니면 화면 7달', () => {
+  const g = createGame({ headless: true, seed: 3 }); g.endIntro(); const s = g.state;
+  g.advanceMonths(3); assert.equal(s.month, 4);
+  const full = { ally: s.people[1], foe: {}, onResult: () => {} };
+  g.finishDuel(full, true, true); g.finishDuel(full, true, true); assert.equal(g.isOpen('auto'), false);
+  g.finishDuel(full, true, true); assert.equal(g.isOpen('auto'), true); assert.equal(s.duels.unlocked, true); assert.equal(s.month, 4);
+  g.advanceMonths(1); assert.equal(g.isOpen('stay'), true, '화면 5달 머물기 그대로');
+  g.advanceMonths(1); assert.equal(g.isOpen('ronin'), true, '화면 6달 낭인');
+  g.advanceMonths(1); assert.equal(g.isOpen('biz_pyo'), false); g.advanceMonths(1); assert.equal(s.month, 8); assert.equal(g.isOpen('biz_pyo'), true, '화면 8달 표국 제때(밀림 없음)');
+  const h = createGame({ headless: true, seed: 3, duelMode: () => 'auto' }); h.endIntro();
+  h.advanceMonths(5); assert.equal(h.isOpen('auto'), false); h.advanceMonths(1); assert.equal(h.state.month, 7); assert.equal(h.isOpen('auto'), true, '화면 7달 시작');
+});
+test('v7.6.3 악명 표시: 처음 0이 아니게 되면 · 아니면 faction(화면 17달) · 숨겨도 계산', () => {
+  const g = createGame({ headless: true, seed: 3 }); const notes = []; g.bus.on('notify', n => notes.push(n.text));
+  assert.equal(g.infamyVisible(), false); g.applyLean('사파'); assert.equal(g.state.infamy, 2); assert.equal(g.infamyVisible(), true);
+  assert.ok(notes.includes('강호에 청운문의 이름이 다르게 오르내리기 시작했어요 — 악명 표시가 생겼어요'));
+  g.applyLean('사파'); assert.equal(notes.filter(t => /악명 표시/.test(t)).length, 1, '한 번만');
+  const h = createGame({ headless: true, seed: 3 }); h.state.camp = '사파'; h.applyLean('사파'); assert.equal(h.infamyVisible(), false); h.unlocks.open('faction'); assert.equal(h.infamyVisible(), true);
 });

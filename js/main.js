@@ -1,5 +1,6 @@
 // 화면 시작점: 게임(규칙) + 화면 모듈을 버스로 잇고, 저장·디버그 매개변수를 처리해요.
 import { createGame, isOurSave } from './game.js';
+import { resolveSave, saveKeyFor } from './systems/savekeys.js';
 import { calendar, SEC_PER_MONTH } from './systems/time.js';
 import { FACTIONS } from './data/factions.js';
 import { createMap } from './ui/map.js';
@@ -13,9 +14,8 @@ import { $, esc, portrait, haptic, bindSettings, fmtSilver } from './ui/util.js'
 const Q = new URLSearchParams(location.search);
 const DEBUG = Q.get('debug') === '1';
 const isPreview = /murim-preview/.test(location.pathname) || Q.get('preview') === '1';
-// 본 사이트는 기획 §9 ⑤대로 murim_save_v5. 옛 v0.5.2 시제품도 같은 키를 써서(형식 다름) 불러올 때 가려내요.
-const SAVE_KEY = isPreview ? 'murim_nd1_preview_save' : 'murim_save_v5';
-const OLD_BACKUP_KEY = 'murim_save_v5_old052';
+// 저장 키(§9 ⑤ Q1): 본판 murim_save_v7 · 미리보기 murim_save_v7_preview. murim_save_v5(예전 v0.5.2)는 안 건드려요.
+const SAVE_KEY = saveKeyFor(isPreview);
 const debugSpeed = DEBUG && Q.get('speed') ? Math.max(1, Math.min(200, +Q.get('speed'))) : 0;
 
 let game, map, sheets, tabs, duelUI;
@@ -63,7 +63,7 @@ function recountAlerts() { ui.alertsByProv = {}; for (const id of Object.keys(ui
 ui.seenNews = () => $('#newsDot').classList.remove('on');
 function save() { try { localStorage.setItem(SAVE_KEY, game.serialize()); } catch (e) { console.warn('save failed', e); } }
 ui.save = () => { save(); refresh(); };
-ui.resetGame = () => { localStorage.removeItem(SAVE_KEY); location.reload(); };
+ui.resetGame = () => { localStorage.removeItem(SAVE_KEY); location.reload(); }; // 새 키만 지움(v5는 절대 안 지움)
 let lastSilver = null;
 function bumpSilver() { const c = $('#chipSilver'); c.classList.remove('bump'); void c.offsetWidth; c.classList.add('bump'); }
 ui.bumpSilver = bumpSilver;
@@ -137,11 +137,9 @@ async function intro() {
 // 시작
 (async function start() {
   if (isPreview) $('#badge').hidden = false;
-  let saved = null; try { saved = localStorage.getItem(SAVE_KEY); } catch (e) {}
-  let state, oldFormat = false;
-  if (saved) { try { state = JSON.parse(saved); } catch (e) { state = null; oldFormat = true; } }
-  if (state && !isOurSave(state)) { oldFormat = true; state = null; }
-  if (oldFormat) { try { if (!localStorage.getItem(OLD_BACKUP_KEY)) localStorage.setItem(OLD_BACKUP_KEY, saved); } catch (e) {} }
+  let R = { raw: null, oldFound: false }; try { R = resolveSave(localStorage, isPreview, isOurSave); } catch (e) {}
+  let state = null; if (R.raw) { try { state = JSON.parse(R.raw); } catch (e) { state = null; } if (state && !isOurSave(state)) state = null; }
+  const oldFormat = !state && R.oldFound;
   boot(state || undefined, Q.get('unlock') === 'all' && DEBUG);
   map.init(); refresh();
   window.addEventListener('resize', () => map.resize());
@@ -151,7 +149,7 @@ async function intro() {
     if (!duelUI.busy) { const pm = game.state.month; game.tick(dt); if (game.state.speed) { acc += dt; if (acc > 0.25) { acc = 0; $('#mprog').style.width = (game.state.prog * 100).toFixed(1) + '%'; } } }
     map.frame(dt); requestAnimationFrame(loop); };
   requestAnimationFrame(loop);
-  if (oldFormat) await modal({ title: '예전 버전 저장이 있어요', body: '이 저장은 예전 시제품(v0.5.2) 형식이라 새 판에서 이어 할 수 없어요.\n예전 저장은 따로 보관해 두고 새로 시작할게요.', choices: [{ id: 'ok', label: '새로 시작하기', primary: true }] });
+  if (oldFormat && !game.state.flags.oldSaveNoticed) { game.state.flags.oldSaveNoticed = true; toast('예전 버전 저장은 그대로 두었어요', 'big', 3600); }
   if (!game.state.introDone) await intro();
   else { toast(`이어서 — ${calendar(game.state.month).text}`, 'info', 2200); if (game.migrateNotice) toast(game.migrateNotice, 'big', 4000); }
   game.resumePending(); save();

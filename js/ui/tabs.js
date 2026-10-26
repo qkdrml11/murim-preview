@@ -37,7 +37,7 @@ export function createTabs(game, ui) {
       return `<div class="item ${b.locked && !has ? 'dis' : ''}"><div>${b.name} ${has ? '✓' : ''}<small>${esc(b.effect)}${b.locked && !has ? ' · ' + esc(b.locked) : ''}</small></div><span class="r">${has ? '지음' : building ? `${building.remaining}달 남음` : b.locked ? '잠김' : `${b.cost}냥 · ${b.months}달`}</span></div>`; }).join('');
     const naeje = s.people.filter(p => p.role === 'naeje').length, sik = s.people.filter(p => p.role === 'sikgaek').length;
     const rooms = 6 + (s.buildings.suryeondong ? 3 : 0);
-    return `<div class="muted">명성 ${s.fame} · 내제자 ${naeje}명${sik ? ` · 식객 ${sik}명` : ''} · 거처 ${naeje + sik}/${rooms}</div>
+    return `<div class="muted">명성 ${s.fame}${game.infamyVisible() ? ` · 악명 ${s.infamy}` : ""} · 내제자 ${naeje}명${sik ? ` · 식객 ${sik}명` : ''} · 거처 ${naeje + sik}/${rooms}</div>
       <h4>사람</h4><div class="list">${ppl}</div>
       ${game.isOpen('build') ? `<h4>본산 건물</h4><div class="muted" style="font-size:13px">짓기는 사람을 눌러 '본산 짓기'를 맡겨요(동시에 1채).</div><div class="list">${bld}</div>` : ''}
       ${s.titles.length ? `<h4>칭호</h4><div>${s.titles.map(t => `<span class="tag">「${esc(t)}」</span>`).join(' ')}</div>` : ''}`;

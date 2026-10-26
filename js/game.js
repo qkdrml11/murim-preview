@@ -110,6 +110,7 @@ export function createGame(opts = {}) {
   const unlocks = createUnlocks(g);
   g.unlocks = unlocks; g.isOpen = unlocks.isOpen; g.visible = unlocks.visible;
   bus.on('feature:open', ({ key, step, silent }) => {
+    if (key === 'faction') g.checkInfamy();
     if (silent) return;
     if (key === 'auto') g.notify(UNLOCK_TEXT, { pause: true, kind: 'unlock' });
     else g.notify(step.line, { pause: !step.later, kind: 'feature', story: step.story, key });
@@ -328,7 +329,7 @@ export function createGame(opts = {}) {
   };
   g.finishDuelAuto = full => { const r = resolveAuto(full.ally, full.foe, rng, full.p); g.finishDuel(full, r.win, false); return r; };
   g.finishDuel = (full, win, manual) => {
-    if (manual) { state.duels.manual++; g.log(`직접 일기토 ${state.duels.manual}번째`); }
+    if (manual) { state.duels.manual++; g.log(`직접 일기토 ${state.duels.manual}번째`); unlocks.openAutoNow(); }
     if (win && !state.achievements.firstDuel) unlockAch('firstDuel');
     state.pendingDuel = null;
     full.onResult(win, manual ? 'manual' : 'auto');
@@ -437,8 +438,11 @@ export function createGame(opts = {}) {
   g.applyLean = camp => {
     const k = SIKGAEK.leanKey[camp]; if (!k) return;
     const n = SIKGAEK.campLeanOnAccept; state.lean[k] = Math.min(100, (state.lean[k] || 0) + n);
-    if (k === 'sa' && state.camp === '정파') state.infamy += n;
+    if (k === 'sa' && state.camp === '정파') { state.infamy += n; g.checkInfamy(); }
   };
+  // §9 ⑤ Q4: 악명은 처음 0이 아니게 되거나 'faction'(화면 17달) 중 먼저 보여요. 그 전에도 계산·저장.
+  g.infamyVisible = () => !!state.flags.infamyShown;
+  g.checkInfamy = () => { if (state.flags.infamyShown || !(state.infamy > 0 || g.isOpen('faction'))) return false; state.flags.infamyShown = true; g.notify('강호에 청운문의 이름이 다르게 오르내리기 시작했어요 — 악명 표시가 생겼어요', { kind: 'big' }); bus.emit('changed'); return true; };
   DECIDE.roninGaek = (c, ctx) => { if (c !== 'yes') return; if (ctx.opp) g.applyLean(ctx.ronin.camp); state.people.push(stayMk(ctx, 'gaekgyeong')); g.notify(`${ctx.ronin.name}이(가) 객경으로 머물러요.`, { kind: 'big' }); };
   DECIDE.roninStay = (c, ctx) => {
     if (c !== 'yes') return;
@@ -557,8 +561,6 @@ export function createGame(opts = {}) {
   ];
   function fireScripts(prevProg) {
     for (const [m, at, fn, need] of SCRIPT) { const key = 's' + m; if (state.month === m && state.prog >= at && !state.flags[key]) { state.flags[key] = true; if (!need || g.isOpen(need)) fn(); } }
-    // 첫 달은 '달 넘김'이 없어서, 달 중간(진행 50%)에 해금을 한 번 봐요(순서표 2: 의뢰).
-    if (state.month === 1 && state.prog >= 0.5 && !state.flags.u1) { state.flags.u1 = true; unlocks.onMonthStart(); }
   }
   function monthEnd() {
     const m = state.month;
@@ -601,7 +603,7 @@ export function createGame(opts = {}) {
     const next = monthLedger(state, m + 1).net;
     if (next < 0 && !state.flags.warnNeg) { state.flags.warnNeg = true; g.notify(`다음 달 은자 ${next} 예상`, { kind: 'alert' }); } else if (next >= 0) state.flags.warnNeg = false;
     state.month++; state.prog = 0;
-    unlocks.onMonthStart();
+    unlocks.onMonthStart(); g.checkInfamy();
     if (state.month === FIRST_YEAR_MONTHS) g.notify(g.benefitEndText(), { kind: 'alert' }); // §9 ④ 9달 살림 알림(확정)
     bus.emit('month', state.month);
     if (state.month > 5) rollRonin();

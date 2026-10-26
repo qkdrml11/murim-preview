@@ -37,19 +37,23 @@ tests/e2e.cjs              Playwright(360×640 · 390×844 · 320×568, 터치)
 ## 디버그
 - `?debug=1` → `window.ND`, `?debug=1&speed=30` → 시간 30배(기본 꺼짐).
 
-## 해금(기능 열기) — 기획 §9 ⑤ (v7.5~v7.6.2)
+## 해금(기능 열기) — 기획 §9 ⑤ (v7.6.3)
 
-- **상태:** `state.unlock = { v:1, open:{key:달}, queue:[], last, countThisMonth, seen }` — 세이브 안에 함께 저장(별도 키 없음).
-- **순서표:** `js/data/unlocks.js` `UNLOCK_STEPS` (키·달·안내 한 줄·이야기·드러나는 고을). 새 게임은 `train, inn`만 열림, 지도는 운봉만.
-- **여는 규칙:** `js/systems/unlocks.js` `onMonthStart()` — 달이 넘어갈 때 queue 맨 앞 하나만(`CONFIG.unlocksPerMonth`). 예외: 1달은 달 넘김이 없어 의뢰(quest)를 1달 절반에 열어요. `auto`는 직접 일기토 3번이면 queue 맨 앞으로.
-- **화면:** 버튼·탭·범례는 `game.isOpen(key)`가 참일 때만. HTML은 `data-feature="키"` 붙이면 `applyFeatures()`가 숨김/표시(잠금 아이콘 없음, 일기토 [자동] 자물쇠만 예외). 지도는 `game.visible(id)`가 거짓인 곳을 먹안개로 덮고 탭·이름표 없음.
-- **열릴 때:** `feature:open` → 토스트/이야기 창 + 해당 요소 반짝(`.feat-pop`).
-- **기능 추가하는 법:** ① `UNLOCK_STEPS`에 한 줄 ② 일이면 `TASK_FEATURE`, 건물이면 `BUILD_FEATURE`에 매핑 ③ UI 요소에 `data-feature` 또는 `game.isOpen()` 검사.
-- **디버그:** `?debug=1&unlock=all` → 전부 열기(`unlocks.openAll()`), `&speed=N` 배속.
-- **기존 세이브:** `migrateState` — `unlock`이 없으면 달 ≤ 지금 달인 것 + 이미 쓴 기능을 한꺼번에, 이야기 없이 `CONFIG.oldSaveNotice` 한 줄만.
+- **상태:** `state.unlock = { v:1, open:{key:연 화면 달}, queue:[], last, countThisMonth, seen }` — 세이브 안에 저장.
+- **순서표:** `js/data/unlocks.js` `UNLOCK_STEPS`. `month`는 표 '달 k'(0부터). **화면 달(state.month) = k + 1.** 새 게임은 `train, inn`, 지도는 운봉만.
+- **여는 규칙:** 새 달이 시작되는 순간에만(`monthEnd`의 `state.month++` 직후 `onMonthStart()`). 경과 달 `state.month − 1 ≥ k`면 queue에 들어가고 맨 앞 하나만(`CONFIG.unlocksPerMonth`). 달 중간 해금 없음 → 의뢰는 화면 2달 시작.
+- **자동 설정(예외):** 3번째 직접 일기토가 끝나면 `finishDuel` → `unlocks.openAutoNow()`가 결과 화면에서 바로 열어요. 한 달 몫을 안 쓰고 다른 해금도 안 밀려요(unshift 없음). 3번 못 하면 화면 7달(k=6) 시작에 순서대로.
+- **악명 표시:** `infamy`는 늘 계산·저장. `g.checkInfamy()` — 악명이 처음 0이 아니게 되거나 `faction`(k=16, 화면 17달)이 열리는 것 중 먼저 → `flags.infamyShown=true` + 한 줄 "강호에 청운문의 이름이 다르게 오르내리기 시작했어요 — 악명 표시가 생겼어요". 화면은 `game.infamyVisible()`일 때만(문파 탭).
+- **화면:** `game.isOpen(key)` / HTML `data-feature="키"` → `applyFeatures()`. 지도는 `game.visible(id)`가 거짓이면 먹안개, 탭·이름표 없음. 일기토 [자동] 자물쇠만 예외로 보임.
+- **기능 추가하는 법:** ① `UNLOCK_STEPS`에 한 줄 ② 일이면 `TASK_FEATURE`, 건물이면 `BUILD_FEATURE` ③ UI에 `data-feature` 또는 `game.isOpen()`.
+- **디버그:** `?debug=1&unlock=all` 전부 열기, `&speed=N` 배속.
+- **기존 세이브(unlock 없음):** 표 달 k ≤ state.month − 1인 것 + 이미 쓴 기능을 한꺼번에, 이야기 없이 `CONFIG.oldSaveNotice` 한 줄.
 
-## 저장 키·옛 형식
-- 본 사이트 `murim_save_v5`(기획), 미리보기 `murim_nd1_preview_save`. 옛 v0.5.2(5b62ce4)도 `murim_save_v5`를 썼고 형식이 달라(`{v:5, turn, player…}`) `isOurSave()`로 가려내요 → `murim_save_v5_old052`로 백업 후 "예전 버전 저장" 창 → 새로 시작. 충돌 안 함.
+## 저장 키 — §9 ⑤ Q1 (v7.6.3), `js/systems/savekeys.js`
+- 본판 `murim_save_v7`, 미리보기 `murim_save_v7_preview`(같은 github.io 도메인이라 나눔).
+- 불러오기: 새 키 → 없으면 `murim_save_v5`(미리보기는 먼저 `murim_nd1_preview_save`)를 읽어 **새 형식이면 새 키로 옮기고 옛 키 삭제**. **예전 v0.5.2 형식이면 손대지 않음** → "예전 버전 저장은 그대로 두었어요" 한 번(`flags.oldSaveNoticed`) 뒤 새로 시작.
+- `murim_save_v5_old052` 백업은 더 안 만들어요. 남아 있으면 한 번 정리: v5가 비었거나 새 형식이면 백업을 v5로 되돌리고(새 형식 저장은 먼저 새 키로) 백업 삭제, v5에 예전 형식이 이미 있으면 백업만 삭제.
+- '처음부터 다시'는 새 키만 지워요. v5는 절대 안 지움.
 
 ## 묻는 창 저장(새로고침 버그)
 - `g.decide(kind, ctx, spec)` → `state.pending`에 저장, 처리기는 `DECIDE[kind]`(ctx는 직렬화 가능 값만). 일기토 대기는 `state.pendingDuel` + `DUEL_RESULT[rk]`. 불러온 뒤 `game.resumePending()`이 다시 띄워요.

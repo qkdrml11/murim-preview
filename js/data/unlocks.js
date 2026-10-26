@@ -1,5 +1,5 @@
 // §9 ① 해금 순서표 (확정, v7.5). 한 줄 = 기능 키 하나. 화면·규칙은 G.isOpen(key)만 봐요.
-// month: 이 달(state.month)이 시작될 때 queue에 들어가요. 한 달에 하나만 열려요(§9 ⑤).
+// month = 표 '달 k'(0부터). 화면 달(state.month) = k + 1. 새 달이 시작될 때 경과 달(state.month − 1) ≥ k면 queue에 들어가요(v7.6.3). 한 달에 하나
 // line: 알림 한 줄, story: 계기 사건 대사(이야기 창). reveal: 안개가 걷히는 고을.
 export const UNLOCK_V = 1;
 export const START_OPEN = ['train', 'inn'];

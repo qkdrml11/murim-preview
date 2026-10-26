@@ -1,5 +1,5 @@
 import { CONFIG } from '../data/config.js';
-// 해금(§9 ⑤): S.unlock = { v, open:{key:달}, queue:[], last }. 달이 넘어갈 때 queue 맨 앞 하나만 열어요.
+// 해금(§9 ⑤, v7.6.3): S.unlock = { v, open:{key:연 화면 달}, queue:[], last }. 새 달이 시작될 때만 queue 맨 앞 하나(자동 설정 예외).
 // 화면은 isOpen(key)만 묻고, 열리면 bus 'feature:open'을 받아 다시 그려요(알림·반짝임 훅).
 import { UNLOCK_V, START_OPEN, UNLOCK_STEPS, UNLOCK_KEYS, STEP, START_VISIBLE } from '../data/unlocks.js';
 
@@ -11,7 +11,7 @@ export function newUnlockState(all = false) {
 export function migrateUnlock(st) {
   const u = newUnlockState(false);
   const used = usedFeatures(st);
-  for (const s of UNLOCK_STEPS) if (s.month <= st.month || used.has(s.key)) u.open[s.key] = st.month;
+  for (const s of UNLOCK_STEPS) if (s.month <= st.month - 1 || used.has(s.key)) u.open[s.key] = st.month; // 표 달 k = 화면 달 − 1
   if (st.duels?.unlocked) u.open.auto = st.duels.unlockedAt || st.month;
   u.last = st.month; u.seen = visibleFor(u, st);
   if (u.open.biz_all) u.seen = null;
@@ -40,12 +40,11 @@ export function createUnlocks(g) {
   const U = () => g.state.unlock;
   const isOpen = key => !U() || U().open[key] != null;
   const visible = id => { const u = U(); return !u || !u.seen || u.seen.includes(id); };
-  function due(month) { // 이 달에 조건이 된 것들(순서표 차례)
-    const st = g.state, out = [];
+  function due(month) { // 이 달에 조건이 된 것들. 표 '달 k'는 0부터(경과 달 = 화면 달 − 1 ≥ k, §9 ⑤ Q2)
+    const el = month - 1, out = [];
     for (const s of UNLOCK_STEPS) {
       if (isOpen(s.key) || U().queue.includes(s.key)) continue;
-      if (s.cond === 'autoDuel') { if ((st.duels.manual >= g.UNLOCK_DUELS) || month >= s.month) out.push(s.key); continue; }
-      if (month >= s.month) out.push(s.key);
+      if (el >= s.month) out.push(s.key); // auto: 직접 3번이면 결과 화면에서 바로(openAutoNow), 아니면 여기서 표 달 6
     }
     return out;
   }
@@ -63,14 +62,16 @@ export function createUnlocks(g) {
   function onMonthStart() {
     const u = U(); if (!u) return null;
     const m = g.state.month;
-    for (const k of due(m)) { if (k === 'auto' && g.state.duels.manual >= g.UNLOCK_DUELS && m < STEP.auto.month) u.queue.unshift(k); else u.queue.push(k); }
-    u.queue.sort((a, b) => (a === 'auto' && g.state.duels.manual >= g.UNLOCK_DUELS ? -1 : b === 'auto' && g.state.duels.manual >= g.UNLOCK_DUELS ? 1 : STEP[a].step - STEP[b].step));
+    for (const k of due(m)) u.queue.push(k);
+    u.queue.sort((a, b) => STEP[a].step - STEP[b].step);
     if (!u.queue.length) return null;
     if (u.last === m && (u.countThisMonth || 0) >= CONFIG.unlocksPerMonth) return null;
     if (u.last !== m) u.countThisMonth = 0;
     const key = u.queue[0]; u.last = m; u.countThisMonth = (u.countThisMonth || 0) + 1; open(key); return key;
   }
+  // §9 ⑤ Q3: 3번째 직접 일기토가 끝나면 바로. '한 달에 하나' 예외(countThisMonth 안 셈), 다른 해금 안 밀림.
+  function openAutoNow() { if (isOpen('auto') || g.state.duels.manual < g.UNLOCK_DUELS) return false; return open('auto'); }
   function openAll() { for (const k of UNLOCK_KEYS) if (!isOpen(k)) open(k, { silent: true }); U().seen = null; g.bus.emit('changed'); }
   function reveal(id) { const u = U(); if (u && u.seen && !u.seen.includes(id)) { u.seen.push(id); g.bus.emit('fog'); } }
-  return { isOpen, visible, onMonthStart, open, openAll, reveal, due };
+  return { isOpen, visible, onMonthStart, open, openAll, reveal, due, openAutoNow };
 }

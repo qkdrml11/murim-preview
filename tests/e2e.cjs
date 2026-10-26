@@ -57,10 +57,11 @@ async function fresh(b, w, h, tag, errs) {
   const p = await ctx.newPage(); p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); }); p.on('pageerror', e => errs.push(String(e)));
   await ctx.addInitScript(() => { if (!sessionStorage.getItem('inj')) { sessionStorage.setItem('inj', '1'); localStorage.setItem('murim_save_v5', JSON.stringify({ v: 5, turn: 3, player: { name: 'old' } })); } });
   await p.goto(BASE + '?debug=1'); await sleep(900);
-  const t = await p.locator('.modal h3').first().textContent().catch(() => ''); ok(/예전 버전/.test(t), '옛 세이브 감지 창: ' + t);
+  const t = await p.evaluate(() => document.body.innerText);
   for (let i = 0; i < 6 && await p.locator('.modal .btn').count(); i++) { await sleep(270); await p.locator('.modal .btn').first().click(); }
-  await sleep(500);
-  const bk = await p.evaluate(() => !!localStorage.getItem('murim_save_v5_old052')); ok(bk, '옛 세이브 백업');
+  ok(t.includes('예전 버전 저장은 그대로 두었어요'), '옛 세이브 알림 한 줄');
+  const ks = await p.evaluate(() => ({ v5: localStorage.getItem('murim_save_v5'), bk: localStorage.getItem('murim_save_v5_old052'), key: ND.SAVE_KEY, f: ND.game.state.flags.oldSaveNoticed }));
+  ok(ks.v5 && JSON.parse(ks.v5).v === 5 && !ks.bk && ks.key === 'murim_save_v7' && ks.f, 'v5 예전 저장 그대로 · 백업 없음 · 새 키 ' + ks.key);
   const vis = await p.evaluate(() => ({ biz: !document.querySelector('#tabs [data-tab=biz]').offsetParent, mg: !document.querySelector('#tabs [data-tab=mugong]').offsetParent, lg: document.querySelector('#legend').hidden, v: Object.keys(ND.game.state.towns).filter(id => ND.game.visible(id)) }));
   ok(vis.biz && vis.mg && vis.lg, '살림·무공 탭·범례 숨김'); ok(vis.v.join() === '운봉', '보이는 고을 운봉만: ' + vis.v.join());
   await p.locator('.pp', { hasText: '마동철' }).first().click(); await sleep(400);
