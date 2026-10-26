@@ -30,7 +30,7 @@
   <div id="toasts"></div>
   <main id="mapWrap">
     <canvas id="map"></canvas>
-    <div id="legend"></div>
+    <div id="legend" data-feature="stay"></div>
     <div id="mapCtl">
       <div class="seg" id="levelSeg"><button data-l="0">천하</button><button data-l="1">성</button><button data-l="2">고을</button></div>
       <button class="mbtn" id="btnHome">⛩ 내 본산</button>
@@ -41,7 +41,7 @@
   </div>
   <div id="people"><div class="people-hint">밝은 사람 = 쉬는 중 · 눌러서 일 맡기기</div><div id="peopleRow"></div></div>
   <nav id="tabs">
-    <button data-tab="map" class="on">지도</button><button data-tab="sect">문파</button><button data-tab="biz">살림</button><button data-tab="mugong">무공</button><button data-tab="news">강호소식<i id="newsDot"></i></button>
+    <button data-tab="map" class="on">지도</button><button data-tab="sect">문파</button><button data-tab="biz" data-feature="ledger">살림</button><button data-tab="mugong" data-feature="path">무공</button><button data-tab="news">강호소식<i id="newsDot"></i></button>
   </nav>
   <section id="panel" class="panel" aria-hidden="true"><div class="panel-head"><span id="panelTitle"></span><button id="panelClose" aria-label="닫기">✕</button></div><div id="panelBody"></div></section>
   <section id="sheet" class="sheet" aria-hidden="true"><div class="grab"></div><div id="sheetBody"></div></section>

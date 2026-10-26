@@ -4,3 +4,6 @@
 - 실행: 이 폴더를 아무 정적 서버로(`python3 -m http.server 8820`) 열기.
 - 테스트: `node --test tests/` · `NODE_PATH=/tmp/pw/node_modules node tests/e2e.cjs http://localhost:8820/`
 - 구조: [ARCHITECTURE.md](ARCHITECTURE.md)
+
+## 디버그
+- `?debug=1&unlock=all&speed=30` — 모든 기능 열기 + 배속. 해금 구조는 ARCHITECTURE.md 참고.

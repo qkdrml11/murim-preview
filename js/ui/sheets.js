@@ -36,12 +36,12 @@ export function createSheets(game, ui) {
       <h4>지금</h4><div class="item"><div>${esc(statusOf(p))}${t ? `<small>${esc(t.label)}</small>` : ''}</div>${t && t.cancellable !== false && t.type !== 'quest' ? `<button class="btn" data-act="cancel" data-t="${t.id}">그만두기</button>` : ''}</div>
       ${!game.isBusy(p) ? `<h4>일 맡기기</h4><div class="list">${tasks.map(k => taskItem(p, k)).join('') || '<div class="muted">지금 맡길 수 있는 일이 없어요.</div>'}</div>` : ''}
       <h4>수련치 <span style="color:var(--gold)">${p.tp}</span></h4>
-      <div class="item"><div>경맥 열기 <small>${p.meridians}개 → ${p.meridians + 1}개 · 경지가 오르면 내력·위력이 커져요</small></div><button class="btn" data-act="mer" data-p="${p.id}" ${p.tp >= mc ? '' : 'disabled'}>열기 ${mc}</button></div>
-      ${arts}`, { kind: 'person', id: pid });
+      ${game.isOpen('path') ? `<div class="item"><div>경맥 열기 <small>${p.meridians}개 → ${p.meridians + 1}개 · 경지가 오르면 내력·위력이 커져요</small></div><button class="btn" data-act="mer" data-p="${p.id}" ${p.tp >= mc ? '' : 'disabled'}>열기 ${mc}</button></div>
+      ${arts}` : `<div class="muted">달이 넘어갈 때 경맥과 무공에 고르게 쓰여요. 경맥 ${p.meridians}개 · ${Object.entries(p.arts).map(([a, s]) => `${esc(ARTS[a]?.name || a)} ${s}성`).join(' · ')}</div>`}`, { kind: 'person', id: pid });
   }
   function taskItem(p, k) {
     const T = game.TASKS[k]; const tg = game.targets(k, p); const none = !tg.length;
-    return `<button class="item ${none ? 'dis' : ''}" data-act="task" data-p="${p.id}" data-k="${k}"><div>${T.name}<small>${esc(T.desc)}${none ? ' · 대상 없음' : ''}</small></div><span class="r">${T.cost ? fmtSilver(T.cost) + '냥' : ''}${T.months ? ` · ${T.months}달` : T.months === null ? ' · 계속' : ''}</span></button>`;
+    return `<button class="item ${none ? 'dis' : ''}" data-act="task" data-p="${p.id}" data-k="${k}"><div>${game.taskName(k)}<small>${esc(T.desc)}${none ? ' · 대상 없음' : ''}</small></div><span class="r">${T.cost ? fmtSilver(T.cost) + '냥' : ''}${T.months ? ` · ${T.months}달` : T.months === null ? ' · 계속' : ''}</span></button>`;
   }
   function targets(pid, k, presetTarget) {
     const p = game.person(pid); const T = game.TASKS[k];
@@ -83,8 +83,8 @@ export function createSheets(game, ui) {
     const idle = st().people.filter(p => !game.isBusy(p));
     open(`<h3>${esc(pl.name)} ${pl.hanja ? `<small class="muted">${esc(pl.hanja)}</small>` : ''}</h3>
       <div class="muted">${game.PROVINCES.find(x => x.id === pl.prov)?.name} · ${SIZES[pl.size].name}${pl.home ? ' · 본산' : ''}${pl.holy ? ' · 성지' : ''} · ${pl.owner ? FACTIONS[pl.owner].name + ' 땅' : pl.contested ? '다툼 중' : '주인 없음'}</div>
-      <h4>세력</h4>${rk.map(([f, v]) => `<div class="inf-row"><span>${FACTIONS[f]?.name || f}</span><div class="bar"><i style="width:${v}%;background:${FACTIONS[f]?.color}"></i></div><b>${v}</b></div>`).join('') || '<div class="muted">아직 아무도 없어요.</div>'}
-      <div class="muted" style="font-size:13px">1위 · 30 이상 · 2위보다 10 앞서면 그 문파 색이 돼요.</div>
+      ${game.isOpen('stay') ? `<h4>세력</h4>${rk.map(([f, v]) => `<div class="inf-row"><span>${FACTIONS[f]?.name || f}</span><div class="bar"><i style="width:${v}%;background:${FACTIONS[f]?.color}"></i></div><b>${v}</b></div>`).join('') || '<div class="muted">아직 아무도 없어요.</div>'}
+      <div class="muted" style="font-size:13px">1위 · 30 이상 · 2위보다 10 앞서면 그 문파 색이 돼요.</div>` : ''}
       ${biz ? `<h4>사업</h4>${biz}` : ''}
       ${here.length ? `<h4>여기서 하는 일</h4>${here.map(t => `<div class="item"><div>${esc(t.label)}<small>${t.people.map(i => esc(game.name(game.person(i)))).join(' · ')} · ${t.remaining == null ? '계속' : t.remaining + '달 남음'}</small></div></div>`).join('')}` : ''}
       <h4>일 맡기기</h4>${idle.length ? `<div class="list">${idle.map(p => `<button class="item" data-act="placePerson" data-p="${p.id}" data-pl="${id}"><div class="row">${portrait(p, 36)}<div>${esc(game.name(p))}<small>${REALM[p.realm]} · ${ROLE_NAME[p.role]}</small></div></div><span class="r">▸</span></button>`).join('')}</div>` : '<div class="muted">쉬는 사람이 없어요.</div>'}`, { kind: 'place', id });

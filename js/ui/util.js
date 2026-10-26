@@ -4,7 +4,7 @@ export const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;',
 export function el(html) { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; }
 let settingsRef = null;
 export function bindSettings(getter) { settingsRef = getter; }
-export function haptic(pattern = 12) {
+export function haptic(pattern = 12) { if (navigator.userActivation && !navigator.userActivation.hasBeenActive) return;
   try { if (settingsRef && settingsRef().vibrate && navigator.vibrate) navigator.vibrate(pattern); } catch (e) { /* 진동 미지원 */ }
 }
 const hashStr = s => { let h = 2166136261; for (const c of String(s)) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return (h >>> 0) / 4294967296; };

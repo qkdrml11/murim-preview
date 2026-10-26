@@ -1,3 +1,4 @@
+import { CONFIG } from './data/config.js';
 // 게임 본체: 상태 + 시스템 묶음. 화면(ui/*)은 bus 이벤트로만 이어져요. 노드에서도 돌아가요(테스트).
 import { createBus, createRegistry } from './core/bus.js';
 import { makeRng } from './core/rng.js';
@@ -8,11 +9,26 @@ import { ACHIEVEMENTS } from './data/achievements.js';
 import { ARTS } from './data/mugong.js';
 import { SEC_PER_MONTH, calendar } from './systems/time.js';
 import { monthlyInfluence, addInf, recolor, ME } from './systems/influence.js';
-import { BIZ, applyMonth, monthLedger, stayCost, bizIncome, livingCost } from './systems/economy.js';
+import { BIZ, applyMonth, monthLedger, stayCost, bizIncome, livingCost, FIRST_YEAR_MONTHS } from './systems/economy.js';
 import { estimate, rateLabel, resolveAuto } from './systems/duel.js';
 import { displayName, BYEOLHO_POOL } from './systems/names.js';
+import { createUnlocks, newUnlockState, migrateUnlock } from './systems/unlocks.js';
+import { TASK_FEATURE, BUILD_FEATURE, STEP } from './data/unlocks.js';
 
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2, SAVE_FMT = 'nd';
+// 저장 옮기기(G.migrate): v1(해금·보류 질문 없음) → v2. §9 ⑤: S.unlock이 없으면 지금 달까지 열릴 것 + 쓴 기능을 한꺼번에 열고 한 줄만 알려요.
+export function migrateState(st) {
+  let notice = null;
+  if (!st.unlock) { st.unlock = migrateUnlock(st); notice = CONFIG.oldSaveNotice; }
+  st.pending = st.pending || []; st.nextDecisionId = st.nextDecisionId || 1; if (st.pendingDuel === undefined) st.pendingDuel = null;
+  if (!st.lean) st.lean = { jeong: 0, sa: 0, ma: 0 };
+  if (st.infamy == null) st.infamy = 0; if (!st.camp) st.camp = '정파';
+  if (st.campLean) { st.lean.sa += st.campLean.사파 || 0; st.lean.ma += st.campLean.마교 || 0; st.lean.jeong += st.campLean.정파 || 0; delete st.campLean; }
+  st.v = SAVE_VERSION; st.fmt = SAVE_FMT;
+  return { state: st, notice };
+}
+// 옛 v0.5.2 시제품도 같은 키(murim_save_v5)에 G.S를 저장해요(v: 5, fmt 없음). 그건 이 판으로 못 읽어요.
+export const isOurSave = st => Boolean(st) && typeof st === 'object' && (st.fmt === SAVE_FMT || Boolean(st.towns && st.people && st.v >= 1 && st.v <= SAVE_VERSION));
 // '이(가)' 같은 표기를 앞 글자 받침에 맞춰 골라요.
 export function josa(text) {
   return text.replace(/([가-힣A-Za-z0-9」')]+)(이\(가\)|을\(를\)|은\(는\)|와\(과\)|이\)?\(라\))/g, (m, w, p) => {
@@ -26,7 +42,7 @@ export const UNLOCK_DUELS = 3, UNLOCK_MONTH = 6;
 export const UNLOCK_TEXT = '검을 여러 번 맞대며 제자들도 장문인의 수를 읽게 되었습니다. 이제 일기토를 맡겨 둘 수 있습니다(자동 설정 열림).';
 const sizeAtLeast = (s, min) => SIZE_ORDER.indexOf(s) >= SIZE_ORDER.indexOf(min);
 
-export function newState(seed = 20261026) {
+export function newState(seed = 20261026, allOpen = false) {
   const { towns, villages } = buildMap();
   const T = {}, V = {};
   for (const t of towns) {
@@ -39,10 +55,11 @@ export function newState(seed = 20261026) {
   T['여울'].biz.push({ type: 'jumak', stage: 1, owner: 'hs', zeroMonths: 0 });
   for (const pl of Object.values(T)) { recolor(pl); pl.startMine = pl.owner === ME; }
   return {
-    v: SAVE_VERSION, seed, rngS: seed, month: 1, prog: 0, speed: 0, silver: 400, fame: 10, arrears: 0,
+    v: SAVE_VERSION, fmt: SAVE_FMT, seed, rngS: seed, month: 1, prog: 0, speed: 0, silver: CONFIG.startSilver, fame: 10, arrears: 0,
     homeProv: 'guizhou', home: '운봉', towns: T, villages: V, people: startPeople(), tasks: [], buildings: {}, nextTaskId: 1,
-    log: [], flags: {}, duels: { manual: 0, unlocked: false }, ronin: { last: -99, rumorYear: 0, rumors: 0 },
+    log: [], flags: {}, duels: { manual: 0, unlocked: !!allOpen }, ronin: { last: -99, rumorYear: 0, rumors: 0 },
     recruitBonus: 0, achievements: {}, titles: [], lastLedger: null, introDone: false,
+    unlock: newUnlockState(allOpen), pending: [], nextDecisionId: 1, pendingDuel: null, lean: { jeong: 0, sa: 0, ma: 0 }, infamy: 0, camp: '정파',
     settings: { nameMode: 'byeolho', vibrate: true, circle: true, titlesOnly: false, fx: 'high' },
   };
 }
@@ -50,9 +67,10 @@ export function newState(seed = 20261026) {
 export function createGame(opts = {}) {
   const bus = createBus();
   const reg = createRegistry(bus);
-  let state = opts.state || newState(opts.seed);
+  let migrateNotice = null;
+  let state = opts.state ? (r => (migrateNotice = r.notice, r.state))(migrateState(opts.state)) : newState(opts.seed, opts.allOpen);
   const rng = makeRng(0); rng.s = state.rngS;
-  const g = { bus, reg, get state() { return state; }, rng, opts };
+  const g = { bus, reg, get state() { return state; }, rng, opts, UNLOCK_DUELS, get migrateNotice() { return migrateNotice; } };
   const save = () => { state.rngS = rng.s; };
 
   // ── 도우미 ──
@@ -71,6 +89,31 @@ export function createGame(opts = {}) {
     if (opts.headless) { const pick = opts.answer ? opts.answer(spec) : spec.choices[0].id; cb(pick); return; }
     g.pause('ask'); bus.emit('ask', { ...spec, cb });
   };
+  // 보류 질문: 고를 때까지 state.pending에 남아 저장돼요. 새로고침하면 resumePending()이 다시 띄워요.
+  // 처리 함수는 이름(kind)으로 찾고, 저장에는 글자·숫자(ctx)만 들어가요.
+  const DECIDE = {}, DUEL_RESULT = {};
+  g.decide = (kind, ctx, spec) => {
+    const d = { id: state.nextDecisionId++, kind, ctx, spec };
+    state.pending.push(d); bus.emit('autosave');
+    g.ask(spec, pick => g.resolveDecision(d.id, pick));
+  };
+  g.resolveDecision = (id, pick) => {
+    const i = state.pending.findIndex(x => x.id === id); if (i < 0) return false;
+    const d = state.pending.splice(i, 1)[0]; DECIDE[d.kind](pick, d.ctx); bus.emit('changed'); bus.emit('autosave'); return true;
+  };
+  g.resumePending = () => {
+    for (const d of [...state.pending]) g.ask(d.spec, pick => g.resolveDecision(d.id, pick));
+    if (state.pendingDuel) { const pd = state.pendingDuel; const ally = g.person(pd.allyId); state.pendingDuel = null; if (ally) g.requestDuel({ ...pd, ally }); }
+    if (state.pendingRecruit) { g.pause('recruit'); bus.emit('recruit', state.pendingRecruit); }
+  };
+  // ── 해금(§9) ──
+  const unlocks = createUnlocks(g);
+  g.unlocks = unlocks; g.isOpen = unlocks.isOpen; g.visible = unlocks.visible;
+  bus.on('feature:open', ({ key, step, silent }) => {
+    if (silent) return;
+    if (key === 'auto') g.notify(UNLOCK_TEXT, { pause: true, kind: 'unlock' });
+    else g.notify(step.line, { pause: !step.later, kind: 'feature', story: step.story, key });
+  });
   g.addFame = n => { state.fame = Math.max(0, state.fame + n); };
   g.gainTp = (p, n) => { if (p) p.tp += Math.round(n); };
 
@@ -107,13 +150,18 @@ export function createGame(opts = {}) {
   g.canDo = (p, key) => {
     const T = TASKS[key];
     if (g.isBusy(p)) return false;
+    if (TASK_FEATURE[key] && !g.isOpen(TASK_FEATURE[key])) return false;
     if (T.who === 'master') return p.role === 'master';
     if (T.who === 'disciple') return p.role === 'naeje' || (p.role === 'sikgaek' && SIKGAEK.tasks.includes(key));
     if (p.role === 'sikgaek') return SIKGAEK.tasks.includes(key);
     if (T.who === 'realm3') return p.realm >= 3;
     return true;
   };
-  g.targets = (key, p) => {
+  g.targets = (key, p) => targetsRaw(key, p).filter(t => {
+    if (key === 'build') return g.isOpen(BUILD_FEATURE[t.id] || 'build_all');
+    const id = String(t.id).split('#')[0]; return !g.place(id) || g.visible(id);
+  });
+  const targetsRaw = (key, p) => {
     const T = TASKS[key]; const all = Object.values(state.towns), vil = Object.values(state.villages);
     const near = pl => pl.prov === 'guizhou' || pl.prov === 'hunan';
     const sortNear = arr => arr.sort((a, b) => (near(b) - near(a)) || ((a.x - 462) ** 2 + (a.y - 905) ** 2) - ((b.x - 462) ** 2 + (b.y - 905) ** 2));
@@ -173,7 +221,7 @@ export function createGame(opts = {}) {
     if (t.type === 'manage') { const [pid, idx] = String(t.target).split('#'); const b = g.place(pid).biz[+idx]; if (b) b.manager = null; }
     if (t.type === 'coach') { const tt = state.tasks.find(x => x.type === 'train' && x.coach === t.people[0]); if (tt) tt.coach = null; }
     if (t.type === 'train') { const c = state.tasks.find(x => x.type === 'coach' && x.target === t.people[0]); if (c) g.cancelTask(c.id); }
-    if (t.type === 'build' && t.remaining > 0) state.silver += Math.floor(t.cost / 2); // 중간에 멈추면 절반 돌려받기(§5-3)
+    if (t.type === 'build' && t.remaining > 0) state.silver += Math.round(t.cost / 2); // 중간에 멈추면 절반 돌려받기(§5-3)
     state.tasks = state.tasks.filter(x => x !== t);
     for (const pid of t.people) { const p = g.person(pid); if (p && p.task === t.id) p.task = null; }
     bus.emit('changed');
@@ -192,10 +240,7 @@ export function createGame(opts = {}) {
       for (const p of ps) { p.bizMonths = (p.bizMonths || 0) + 1; if ((p.reveal.sangjae || 0) < 1) p.reveal.sangjae = 1; }
       const bi = pl.biz.length - 1;
       if (T.biz === 'sadeul') { g.notify(`${pl.name} 사들이기를 열었어요(${who}).`, { pause: true, place: pl.id }); }
-      else g.ask({ title: `${pl.name} ${BIZ[T.biz].name} 개업`, body: `${who}이(가) ${pl.name}에 ${BIZ[T.biz].name}을(를) 열었어요.\n관리인으로 남기면 상재 배율이 붙어요(없으면 ×0.7).`, choices: ps[0].role === 'master' ? [{ id: 'back', label: '장문인은 본산으로(관리인 없음 ×0.7)', primary: true }] : [{ id: 'stay', label: `${who} 관리인으로 남기기`, primary: true }, { id: 'back', label: '본산으로 돌아오기' }] }, c => {
-        if (c === 'stay' && ps[0] && ps[0].role !== 'master' && !g.isBusy(ps[0])) g.assign('manage', [ps[0].id], `${pl.id}#${bi}`);
-        bus.emit('changed');
-      });
+      else g.decide('bizOpen', { pid: ps[0]?.id, place: pl.id, bi }, { title: `${pl.name} ${BIZ[T.biz].name} 개업`, body: `${who}이(가) ${pl.name}에 ${BIZ[T.biz].name}을(를) 열었어요.\n관리인으로 남기면 상재 배율이 붙어요(없으면 ×0.7).`, choices: ps[0].role === 'master' ? [{ id: 'back', label: '장문인은 본산으로(관리인 없음 ×0.7)', primary: true }] : [{ id: 'stay', label: `${who} 관리인으로 남기기`, primary: true }, { id: 'back', label: '본산으로 돌아오기' }] });
       g.pause('task'); checkAchievements(); return;
     }
     if (t.type === 'request') {
@@ -213,6 +258,7 @@ export function createGame(opts = {}) {
     bus.emit('changed');
   }
 
+  DECIDE.bizOpen = (c, { pid, place, bi }) => { const p = g.person(pid); if (c === 'stay' && p && p.role !== 'master' && !g.isBusy(p)) g.assign('manage', [pid], `${place}#${bi}`); };
   // ── 습격(§2·§3) ──
   function resolveRaid(t, ps, pl) {
     const target = pl.biz.find(b => b.owner && b.owner !== ME);
@@ -273,7 +319,9 @@ export function createGame(opts = {}) {
     const p = g.duelEstimate(ally, foe);
     const label = rateLabel(p);
     const recommendManual = ally.role === 'master' || label === '위험' || label === '무모' || spec.kind === 'public';
-    const full = { ...spec, p, label, unlocked: state.duels.unlocked, lockText: g.lockText(), recommend: state.duels.unlocked ? (recommendManual ? 'manual' : 'auto') : 'manual' };
+    if (spec.rk) { state.pendingDuel = { title: spec.title, place: spec.place, kind: spec.kind, allyId: ally.id, foe, rk: spec.rk, ctx: spec.ctx }; const rk = spec.rk, cx = spec.ctx; spec = { ...spec, onResult: (win, how) => DUEL_RESULT[rk](win, cx, how) }; bus.emit('autosave'); }
+    const autoOn = g.isOpen('auto');
+    const full = { ...spec, p, label, unlocked: autoOn, lockText: g.lockText(), recommend: autoOn ? (recommendManual ? 'manual' : 'auto') : 'manual' };
     g.pause('duel');
     if (opts.headless) { const how = opts.duelMode ? opts.duelMode(full) : 'auto'; if (how === 'auto' || !opts.manualResult) g.finishDuelAuto(full); else g.finishDuel(full, opts.manualResult(full), true); return; }
     bus.emit('duel:request', full);
@@ -282,18 +330,12 @@ export function createGame(opts = {}) {
   g.finishDuel = (full, win, manual) => {
     if (manual) { state.duels.manual++; g.log(`직접 일기토 ${state.duels.manual}번째`); }
     if (win && !state.achievements.firstDuel) unlockAch('firstDuel');
+    state.pendingDuel = null;
     full.onResult(win, manual ? 'manual' : 'auto');
     checkUnlock();
     bus.emit('changed');
   };
-  function checkUnlock() {
-    if (state.duels.unlocked) return;
-    if (state.duels.manual >= UNLOCK_DUELS || state.month > UNLOCK_MONTH || (state.month === UNLOCK_MONTH && state.flags.monthEnded6)) {
-      state.duels.unlocked = true; state.duels.unlockedAt = state.month;
-      g.notify(UNLOCK_TEXT, { pause: true, kind: 'unlock' });
-      bus.emit('unlock');
-    }
-  }
+  function checkUnlock() {} // v7.5: 자동 설정은 해금 순서표(auto)로 — 달이 시작될 때 하나씩(systems/unlocks.js)
   g.checkUnlock = checkUnlock;
   function injure(p, months) { p.injured = Math.max(p.injured, months); if (p.task) { const t = g.taskOf(p); if (t && t.months !== null) {} } }
 
@@ -310,13 +352,14 @@ export function createGame(opts = {}) {
     sweepC: { done(t, ps, pl, ok) {
       const v = state.villages['숯막골'];
       const fighter = [...ps].sort((a, b) => b.realm - a.realm || b.meridians - a.meridians)[0];
-      const go = () => g.requestDuel({ title: `숯막골 소탕 · 부두목 일기토`, place: '숯막골', kind: 'sweep', ally: fighter, foe: { ...FOES.guchil, label: "'외눈' 구칠" }, onResult: win => {
-        if (win) { addInf(v, ME, 8); state.silver += 40; v.banditChance = 0.05; g.notify(`잔당을 흩었어요! 숯막골 세력 +${Math.trunc(8 * 2)}, 은자 +40`, { pause: true, kind: 'big', place: '숯막골' }); recolor(v); }
-        else { injure(fighter, 1); g.notify(`${g.name(fighter)}이(가) 밀려났어요(가벼운 부상 1달). 잔당은 여전해요.`, { pause: true, place: '숯막골' }); }
-      } });
-      go();
+      g.requestDuel({ title: `숯막골 소탕 · 부두목 일기토`, place: '숯막골', kind: 'sweep', ally: fighter, foe: { ...FOES.guchil, label: "'외눈' 구칠" }, rk: 'sweep', ctx: { fighter: fighter.id } });
     } },
     beastD: { done(t, ps, pl) { addInf(pl, ME, 8); state.recruitBonus += 1; g.notify(`${pl.name} 맹수를 쫓았어요. 세력 +${Math.trunc(8 * 2)}, 다음 모집 후보 +1`, { pause: true, place: pl.id }); recolor(pl); } },
+  };
+  DUEL_RESULT.sweep = (win, { fighter: fid }) => {
+    const v = state.villages['숯막골'], fighter = g.person(fid);
+    if (win) { addInf(v, ME, 8); state.silver += 40; v.banditChance = 0.05; g.notify(`잔당을 흩었어요! 숯막골 세력 +${Math.trunc(8 * 2)}, 은자 +40`, { pause: true, kind: 'big', place: '숯막골' }); recolor(v); }
+    else { if (fighter) injure(fighter, 1); g.notify(`${fighter ? g.name(fighter) : '보낸 사람'}이(가) 밀려났어요(가벼운 부상 1달). 잔당은 여전해요.`, { pause: true, place: '숯막골' }); }
   };
   g.startQuest = (quest, peopleIds, target, extra = {}) => {
     const ps = peopleIds.map(g.person); if (ps.some(p => !p || g.isBusy(p))) return false;
@@ -331,17 +374,20 @@ export function createGame(opts = {}) {
     const bpl = pl.biz.includes(b) ? pl : state.towns['운봉'];
     g.notify(`흑담채가 ${bpl.name} ${BIZ[b.type].name}을(를) 습격했어요!`, { pause: true, place: bpl.id, kind: 'alert' });
     const cands = state.people.filter(p => p.injured === 0).sort((a, c) => c.realm - a.realm);
-    g.ask({ title: `! 습격 — ${bpl.name}`, body: `'흑면호' 장귀돌이 직접 왔어요. 막을 사람을 보내 일기토로 맞서요.\n못 막으면 그 사업 2달 수입 0, 세력 −5.`, place: bpl.id,
-      choices: [...cands.slice(0, 4).map((p, i) => ({ id: p.id, label: `${g.name(p)} (${REALM[p.realm]})`, primary: p.id === 'p1' })), { id: 'none', label: '두기' }] }, pick => {
-      const lose = () => { b.zeroMonths = 2; addInf(bpl, ME, -5); g.notify(`${bpl.name} ${BIZ[b.type].name}이(가) 털렸어요. 2달 수입 0, 세력 −5`, { place: bpl.id }); const ch = recolor(bpl); if (ch) onColorChange(ch); };
-      if (pick === 'none') return lose();
-      const ally = g.person(pick);
-      g.requestDuel({ title: `${bpl.name} 습격 막기`, place: bpl.id, kind: 'raid', ally, foe: { ...FOES.janggwidol, label: "'흑면호' 장귀돌" }, onResult: win => {
-        if (win) { g.gainTp(ally, 15); addInf(bpl, ME, 5); g.notify(`습격을 막았어요! ${bpl.name} 세력 +5, ${g.name(ally)} 수련치 +15. 이제 반격할 차례예요(청석 흑담채 산채 습격).`, { pause: true, kind: 'big', place: bpl.id }); state.flags.counterHint = true; const ch = recolor(bpl); if (ch) onColorChange(ch); }
-        else { injure(ally, 1); lose(); }
-      } });
-    });
+    g.decide('raid', { bpl: bpl.id, bi: bpl.biz.indexOf(b) }, { title: `! 습격 — ${bpl.name}`, body: `'흑면호' 장귀돌이 직접 왔어요. 막을 사람을 보내 일기토로 맞서요.\n못 막으면 그 사업 2달 수입 0, 세력 −5.`, place: bpl.id,
+      choices: [...cands.slice(0, 4).map((p, i) => ({ id: p.id, label: `${g.name(p)} (${REALM[p.realm]})`, primary: p.id === 'p1' })), { id: 'none', label: '두기' }] });
   }
+  const raidLose = ({ bpl: bid, bi }) => { const bpl = state.towns[bid], b = bpl.biz[bi] || bpl.biz[0]; b.zeroMonths = 2; addInf(bpl, ME, -5); g.notify(`${bpl.name} ${BIZ[b.type].name}이(가) 털렸어요. 2달 수입 0, 세력 −5`, { place: bpl.id }); const ch = recolor(bpl); if (ch) onColorChange(ch); };
+  DECIDE.raid = (pick, ctx) => {
+    if (pick === 'none' || !g.person(pick)) return raidLose(ctx);
+    const bpl = state.towns[ctx.bpl];
+    g.requestDuel({ title: `${bpl.name} 습격 막기`, place: bpl.id, kind: 'raid', ally: g.person(pick), foe: { ...FOES.janggwidol, label: "'흑면호' 장귀돌" }, rk: 'raid', ctx: { ...ctx, ally: pick } });
+  };
+  DUEL_RESULT.raid = (win, ctx) => {
+    const bpl = state.towns[ctx.bpl], ally = g.person(ctx.ally);
+    if (win) { g.gainTp(ally, 15); addInf(bpl, ME, 5); g.notify(`습격을 막았어요! ${bpl.name} 세력 +5, ${g.name(ally)} 수련치 +15.${g.isOpen('raid') ? ' 이제 반격할 차례예요(청석 흑담채 산채 습격).' : ''}`, { pause: true, kind: 'big', place: bpl.id }); state.flags.counterHint = true; const ch = recolor(bpl); if (ch) onColorChange(ch); }
+    else { if (ally) injure(ally, 1); raidLose(ctx); }
+  };
   function roninEvent(ronin, realm, first) {
     const hint = (() => { let r = realm; if (!rng.chance(0.7)) r = Math.max(1, Math.min(5, r + (rng.chance(0.5) ? 1 : -1))); return REALM[r]; })();
     const muHint = HINTS.geun[first ? 1 : rng.int(0, 3)];
@@ -351,57 +397,68 @@ export function createGame(opts = {}) {
     const body = first ? `운봉 주막에 '철검' 노삼이라는 낭인이 와 "청운문 검이 아직 살아 있소?" 하고 비무를 청해요.\n경지 ${hint}로 보여요 · ${muHint}.\n이기면 명성 +5, 판돈 +20냥, 수련치 +10. 지면 명성 −2, 가벼운 부상 1달.`
       : `떠돌이 낭인 '${ronin.byeolho}' ${ronin.name}이(가) 비무를 청합니다.\n경지 ${hint}로 보여요 · ${muHint}.`;
     g.notify(`떠돌이 낭인 ${ronin.name}이(가) 비무를 청합니다.`, { kind: 'alert', place: '운봉' });
-    g.ask({ title: '떠돌이 낭인의 비무', body, place: '운봉', choices: [...fighters.map((p, i) => ({ id: p.id, label: `${['①', '②', '③'][i]} ${g.name(p)}${p.role === 'master' ? ' (장문인 직접)' : ''} · ${REALM[p.realm]}`, primary: i === 0 })), { id: 'refuse', label: `${first ? '④ ' : ''}정중히 거절` }] }, pick => {
-      if (pick === 'refuse') {
-        if (rng.chance(0.3)) { const y = calendar(state.month).year; if (state.ronin.rumorYear !== y) { state.ronin.rumorYear = y; g.addFame(-1); g.notify('"청운문이 낭인 하나를 피했다더라" — 명성 −1'); } else g.notify('"청운문이 또 낭인을 피했다더라"는 소문이 돌아요.'); }
-        else g.notify('낭인은 고개를 끄덕이고 떠났어요.');
-        bus.emit('changed'); return;
-      }
-      const ally = g.person(pick);
-      const top = Math.max(...state.people.map(p => p.realm));
-      g.requestDuel({ title: '떠돌이 낭인의 비무', place: '운봉', kind: 'ronin', ally, foe, onResult: win => {
-        const R = { 1: [3, 10, 5, -1, 0], 2: [5, 20, 10, -2, 1], 3: [8, 40, 20, -2, 1], 4: [12, 80, 30, -3, 1] }[Math.min(4, realm)];
-        if (win) { const f = Math.round(R[0] * (realm > top ? 1.5 : 1)); g.addFame(f); state.silver += R[1]; g.gainTp(ally, R[2]); g.notify(`비무 승리! 명성 +${f}, 판돈 +${R[1]}냥, ${g.name(ally)} 수련치 +${R[2]}`, { pause: true, kind: 'big' }); }
-        else { g.addFame(R[3]); const inj = ally.role === 'master' ? 3 : R[4]; if (inj) injure(ally, inj); g.notify(`비무에서 졌어요. 명성 ${R[3]}${inj ? `, 부상 ${inj}달` : ''}`, { pause: true }); }
-        roninStayRoll(ronin, foe, win);
-      } });
-    });
+    g.decide('ronin', { ronin, realm, first, foe }, { title: '떠돌이 낭인의 비무', body, place: '운봉', choices: [...fighters.map((p, i) => ({ id: p.id, label: `${['①', '②', '③'][i]} ${g.name(p)}${p.role === 'master' ? ' (장문인 직접)' : ''} · ${REALM[p.realm]}`, primary: i === 0 })), { id: 'refuse', label: `${first ? '④ ' : ''}정중히 거절` }] });
   }
+  DECIDE.ronin = (pick, { ronin, realm, foe }) => {
+    if (pick === 'refuse' || !g.person(pick)) {
+      if (rng.chance(0.3)) { const y = calendar(state.month).year; if (state.ronin.rumorYear !== y) { state.ronin.rumorYear = y; g.addFame(-1); g.notify('"청운문이 낭인 하나를 피했다더라" — 명성 −1'); } else g.notify('"청운문이 또 낭인을 피했다더라"는 소문이 돌아요.'); }
+      else g.notify('낭인은 고개를 끄덕이고 떠났어요.');
+      return;
+    }
+    const top = Math.max(...state.people.map(p => p.realm));
+    g.requestDuel({ title: '떠돌이 낭인의 비무', place: '운봉', kind: 'ronin', ally: g.person(pick), foe, rk: 'ronin', ctx: { ronin, realm, foe, ally: pick, top } });
+  };
+  DUEL_RESULT.ronin = (win, { ronin, realm, foe, ally: aid, top }) => {
+    const ally = g.person(aid);
+    const R = { 1: [3, 10, 5, -1, 0], 2: [5, 20, 10, -2, 1], 3: [8, 40, 20, -2, 1], 4: [12, 80, 30, -3, 1] }[Math.min(4, realm)];
+    if (win) { const f = Math.round(R[0] * (realm > top ? 1.5 : 1)); g.addFame(f); state.silver += R[1]; g.gainTp(ally, R[2]); g.notify(`비무 승리! 명성 +${f}, 판돈 +${R[1]}냥, ${g.name(ally)} 수련치 +${R[2]}`, { pause: true, kind: 'big' }); }
+    else { g.addFame(R[3]); const inj = ally?.role === 'master' ? 3 : R[4]; if (inj && ally) injure(ally, inj); g.notify(`비무에서 졌어요. 명성 ${R[3]}${inj ? `, 부상 ${inj}달` : ''}`, { pause: true }); }
+    roninStayRoll(ronin, foe, win);
+  };
   // v7.4 낭인이 남는 장면: 이기면 15%(내제자/속가/식객), 지면 3%(객경, 객방 필요). 한 해 최대 1명.
   function roninStayRoll(ronin, foe, win) {
     const y = calendar(state.month).year;
     if (state.ronin.stayYear === y) return;
     if (!rng.chance(win ? RONIN_STAY.winChance : RONIN_STAY.loseChance)) return;
     state.ronin.stayYear = y;
-    const mk = role => ({ id: 'r' + state.month + Math.floor(rng.next() * 1e5), name: ronin.name, doho: '', byeolho: foe.realm >= 3 ? ronin.byeolho : '', nick: foe.realm >= 3 ? '' : ronin.byeolho, role,
-      realm: foe.realm, meridians: foe.meridians, arts: { ...foe.arts }, simbeop: foe.simbeop, talent: { geun: rng.int(1, 2), oseong: rng.int(0, 2), sangjae: rng.int(0, 1) }, reveal: { geun: role === 'gaekgyeong' ? 2 : 1, oseong: 1, sangjae: 0 }, hints: {},
-      tp: 0, task: null, injured: 0, discontent: 0, loyalty: 50, trainMonths: 0, bizMonths: 0, joined: state.month, ronin: true });
-    const opp = (SIKGAEK.oppositeCamps[SIKGAEK.myCamp] || []).includes(ronin.camp);
+    const opp = (SIKGAEK.oppositeCamps[state.camp] || []).includes(ronin.camp);
     const warn = opp ? '\n' + SIKGAEK.campWarningText(ronin.camp) : '';
-    const lean = () => { if (!opp) return; state.campLean = state.campLean || {}; state.campLean[ronin.camp] = (state.campLean[ronin.camp] || 0) + SIKGAEK.campLeanOnAccept; };
+    const ctx = { ronin, foe, opp };
     if (!win) {
       if (!state.buildings.gaekbang) { g.notify(`${ronin.name}: "이 문파가 마음에 드는군. 객방이 생기면 다시 오겠소."`, { kind: 'big' }); state.ronin.revisit = { month: state.month + rng.int(3, 12), ronin, foe }; return; }
-      return g.ask({ title: `${ronin.name}이(가) 남고 싶어 합니다`, body: '"이 문파가 마음에 드는군." 객경으로 모실까요? (생활비 + 예우비 10냥)' + warn, choices: [{ id: 'yes', label: '받기', primary: true }, { id: 'no', label: '사양' }] }, c => { if (c === 'yes') { lean(); state.people.push(mk('gaekgyeong')); g.notify(`${ronin.name}이(가) 객경으로 머물러요.`, { kind: 'big' }); bus.emit('changed'); } });
+      return g.decide('roninGaek', ctx, { title: `${ronin.name}이(가) 남고 싶어 합니다`, body: '"이 문파가 마음에 드는군." 객경으로 모실까요? (생활비 + 예우비 10냥)' + warn, choices: [{ id: 'yes', label: '받기', primary: true }, { id: 'no', label: '사양' }] });
     }
-    g.ask({ title: `${ronin.name}이(가) 남고 싶어 합니다`, body: '"곁에 머물며 배우고 싶소."' + warn, choices: [{ id: 'yes', label: '받기', primary: true }, { id: 'no', label: '사양' }] }, c => {
-      if (c !== 'yes') return;
-      const hasSokga = false; // 속가(무관)는 다음 업데이트
-      g.ask({ title: '어떤 자리로 받을까요?', body: `내제자: 입문례 50냥 · 생활비 ${LIVING[foe.realm]}냥 · 본문 무공을 배워요\n식객: 비용 0 · 생활비 절반 · 머물기·의뢰·습격만, 본문 무공은 못 배워요\n속가제자: 속가(무관)가 있어야 해요`,
-        choices: [{ id: 'naeje', label: '내제자 (입문례 50냥)', primary: true, disabled: state.silver < 50 }, { id: 'sikgaek', label: '식객' }, { id: 'sokga', label: '속가제자 — 속가 없음', disabled: !hasSokga }] }, role => {
-        if (role === 'naeje') { state.silver -= 50; const p = mk('naeje'); p.doho = '하' + rng.pick(DOHO_SECOND); state.people.push(p); }
-        else if (role === 'sikgaek') state.people.push(mk('sikgaek'));
-        else return;
-        lean();
-        g.notify(`${ronin.name}이(가) ${ROLE_NAME[role]}(으)로 청운문에 머물러요.`, { kind: 'big' }); checkAchievements(); bus.emit('changed');
-      });
-    });
+    g.decide('roninStay', ctx, { title: `${ronin.name}이(가) 남고 싶어 합니다`, body: '"곁에 머물며 배우고 싶소."' + warn, choices: [{ id: 'yes', label: '받기', primary: true }, { id: 'no', label: '사양' }] });
   }
+  const stayMk = ({ ronin, foe }, role) => ({ id: 'r' + state.month + Math.floor(rng.next() * 1e5), name: ronin.name, doho: '', byeolho: foe.realm >= 3 ? ronin.byeolho : '', nick: foe.realm >= 3 ? '' : ronin.byeolho, role, camp: ronin.camp,
+    realm: foe.realm, meridians: foe.meridians, arts: { ...foe.arts }, simbeop: foe.simbeop, talent: { geun: rng.int(1, 2), oseong: rng.int(0, 2), sangjae: rng.int(0, 1) }, reveal: { geun: role === 'gaekgyeong' ? 2 : 1, oseong: 1, sangjae: 0 }, hints: {},
+    tp: 0, task: null, injured: 0, discontent: 0, loyalty: 50, trainMonths: 0, bizMonths: 0, joined: state.month, ronin: true });
+  // §5-7 ②-1: 반대 진영 낭인을 받으면 그쪽으로 +2. 정파 문파가 사파로 기울면 악명도 같은 만큼.
+  g.applyLean = camp => {
+    const k = SIKGAEK.leanKey[camp]; if (!k) return;
+    const n = SIKGAEK.campLeanOnAccept; state.lean[k] = Math.min(100, (state.lean[k] || 0) + n);
+    if (k === 'sa' && state.camp === '정파') state.infamy += n;
+  };
+  DECIDE.roninGaek = (c, ctx) => { if (c !== 'yes') return; if (ctx.opp) g.applyLean(ctx.ronin.camp); state.people.push(stayMk(ctx, 'gaekgyeong')); g.notify(`${ctx.ronin.name}이(가) 객경으로 머물러요.`, { kind: 'big' }); };
+  DECIDE.roninStay = (c, ctx) => {
+    if (c !== 'yes') return;
+    const hasSokga = false; // 속가(무관)는 다음 업데이트
+    g.decide('roninRole', ctx, { title: '어떤 자리로 받을까요?', body: `내제자: 입문례 50냥 · 생활비 ${LIVING[ctx.foe.realm]}냥 · 본문 무공을 배워요\n식객: 비용 0 · 생활비 절반 · 머물기·의뢰·습격만, 본문 무공은 못 배워요\n속가제자: 속가(무관)가 있어야 해요`,
+      choices: [{ id: 'naeje', label: '내제자 (입문례 50냥)', primary: true, disabled: state.silver < 50 }, { id: 'sikgaek', label: '식객' }, { id: 'sokga', label: '속가제자 — 속가 없음', disabled: !hasSokga }] });
+  };
+  DECIDE.roninRole = (role, ctx) => {
+    if (role === 'naeje' && state.silver >= 50) { state.silver -= 50; const p = stayMk(ctx, 'naeje'); p.doho = '하' + rng.pick(DOHO_SECOND); state.people.push(p); }
+    else if (role === 'sikgaek') state.people.push(stayMk(ctx, 'sikgaek'));
+    else return;
+    if (ctx.opp) g.applyLean(ctx.ronin.camp);
+    g.notify(`${ctx.ronin.name}이(가) ${ROLE_NAME[role]}(으)로 청운문에 머물러요.`, { kind: 'big' }); checkAchievements();
+  };
   g.roninEligible = () => {
     const top = Math.max(...state.people.map(p => p.realm));
     return state.fame >= 20 && state.fame < 300 && top <= 4 && state.month - state.ronin.last > 3;
   };
   function rollRonin() {
-    if (!state.flags.eventA || !g.roninEligible() || !rng.chance(0.17)) return;
+    if (!state.flags.eventA || !g.isOpen('ronin') || !g.roninEligible() || !rng.chance(0.17)) return;
     const top = Math.max(...state.people.map(p => p.realm));
     const realm = Math.max(1, top + rng.weighted([[-1, 55], [0, 35], [1, 10]]));
     const weakest = Math.min(...state.people.filter(p => p.role === 'naeje').map(p => p.realm));
@@ -418,33 +475,29 @@ export function createGame(opts = {}) {
     if (sang) ch.push({ id: 'sang:' + sang.id, label: `상재로 수소문 — ${g.name(sang)}`, primary: true });
     if (mu && mu !== sang) ch.push({ id: 'mu:' + mu.id, label: `무재로 산길 — ${g.name(mu)}` });
     ch.push({ id: 'no', label: '거절' });
-    g.ask({ title: '주막 손님의 의뢰', place: '청석', body: '"숯막골 길에서 약초 짐을 잃었소. 찾아 주면 사례하리다."\n0냥 · 1달. 성공하면 60냥 + 다음 모집 후보 +1. 실패해도 손해 없음.', choices: ch }, pick => {
-      if (pick === 'no') return;
-      const [mode, pid] = pick.split(':');
-      g.startQuest('herbB', [pid], '청석', { label: '약초 짐 찾기', mode });
-    });
+    g.decide('herbB', {}, { title: '주막 손님의 의뢰', place: '청석', body: '"숯막골 길에서 약초 짐을 잃었소. 찾아 주면 사례하리다."\n0냥 · 1달. 성공하면 60냥 + 다음 모집 후보 +1. 실패해도 손해 없음.', choices: ch });
   }
+  DECIDE.herbB = pick => { if (pick === 'no') return; const [mode, pid] = pick.split(':'); if (!g.startQuest('herbB', [pid], '청석', { label: '약초 짐 찾기', mode })) g.notify('보낼 사람이 바빠서 약초상이 돌아갔어요.'); };
   function eventC() {
     g.notify('주막 소문: "숯막골 옆 산에 흑담채 잔당이 모인답니다."', { kind: 'alert', place: '숯막골' });
-    g.ask({ title: '화전민촌 소문', place: '숯막골', body: `부두목 '외눈' 구칠이 잔당을 모으고 있어요.\n① 소탕 습격: 제자 2~3명 · 50냥 · 1달 → 숯막골 세력 +8, 은자 +40, 부두목과 일기토\n② 두기: 숯막골 산채화 확률 +5%p`, choices: [{ id: 'sweep', label: '① 소탕 보내기', primary: true }, { id: 'leave', label: '② 두기' }] }, pick => {
+    g.decide('rumorC', {}, { title: '화전민촌 소문', place: '숯막골', body: `부두목 '외눈' 구칠이 잔당을 모으고 있어요.\n① 소탕 습격: 제자 2~3명 · 50냥 · 1달 → 숯막골 세력 +8, 은자 +40, 부두목과 일기토\n② 두기: 숯막골 산채화 확률 +5%p`, choices: [{ id: 'sweep', label: '① 소탕 보내기', primary: true }, { id: 'leave', label: '② 두기' }] });
+  }
+  DECIDE.rumorC = pick => {
       if (pick === 'leave') { state.villages['숯막골'].banditChance += 0.05; g.notify('숯막골 산채화 확률 +5%p'); return; }
       state.flags.sweepPending = true; bus.emit('pickTeam', { quest: 'sweepC', target: '숯막골', cost: 50, label: '숯막골 소탕', min: 2, max: 3 });
       if (opts.headless) { const team = state.people.filter(p => !g.isBusy(p) && p.role !== 'master').sort((a, b) => b.realm - a.realm).slice(0, 2).map(p => p.id); g.startQuest('sweepC', team, '숯막골', { cost: 50, label: '숯막골 소탕', asRaid: true }); }
-    });
-  }
+  };
   function eventBeast() {
     const v = state.villages['까치재'];
     g.notify('까치재에 맹수가 나타났어요.', { kind: 'alert', place: '까치재' });
     const c = state.people.filter(p => !g.isBusy(p) && p.realm >= 2 && p.role !== 'master').sort((a, b) => a.realm - b.realm)[0];
-    g.ask({ title: '맹수 출몰 — 까치재', place: '까치재', body: '이류 이상 1명 · 0냥 · 1달. 쫓으면 세력 +8(화전민촌 ×2), 모집 후보 +1. 두면 이 마을 세력 −10.', choices: c ? [{ id: c.id, label: `${g.name(c)} 보내기`, primary: true }, { id: 'no', label: '두기' }] : [{ id: 'no', label: '보낼 사람이 없어요' }] }, pick => {
-      if (pick === 'no') { addInf(v, ME, -10); return; }
-      g.startQuest('beastD', [pick], '까치재', { label: '맹수 쫓기' });
-    });
+    g.decide('beastD', {}, { title: '맹수 출몰 — 까치재', place: '까치재', body: '이류 이상 1명 · 0냥 · 1달. 쫓으면 세력 +8(화전민촌 ×2), 모집 후보 +1. 두면 이 마을 세력 −10.', choices: c ? [{ id: c.id, label: `${g.name(c)} 보내기`, primary: true }, { id: 'no', label: '두기' }] : [{ id: 'no', label: '보낼 사람이 없어요' }] });
   }
+  DECIDE.beastD = pick => { const v = state.villages['까치재']; if (pick === 'no' || !g.startQuest('beastD', [pick], '까치재', { label: '맹수 쫓기' })) addInf(v, ME, -10); };
   function villageRoll() { // §4-1 화전민촌 분기 이벤트(1단계: 약초 철·산불·산채화 + 방치)
     let alerts = 0;
     for (const v of Object.values(state.villages)) {
-      const mine = (v.inf[ME] || 0) > 0 || v.prov === 'guizhou';
+      const mine = ((v.inf[ME] || 0) > 0 || v.prov === 'guizhou') && g.visible(v.id);
       const tended = v.biz.length || state.tasks.some(t => t.target === v.id);
       if (!tended) v.neglect++; else v.neglect = 0;
       if (!mine) continue;
@@ -479,7 +532,7 @@ export function createGame(opts = {}) {
   }
   function checkAchievements() {
     const mineTowns = Object.values(state.towns).filter(t => t.owner === ME && !t.home && !t.startMine);
-    if (mineTowns.length && !state.achievements.firstTown) unlockAch('firstTown');
+    if (mineTowns.length && !state.achievements.firstTown && g.isOpen('stay')) unlockAch('firstTown');
     if (state.people.filter(p => p.role === 'naeje').length >= 10) unlockAch('disciples10');
     let biz = 0; for (const pl of [...Object.values(state.towns), ...Object.values(state.villages)]) biz += pl.biz.filter(b => b.owner === ME).length;
     if (biz >= 5) unlockAch('biz5');
@@ -494,15 +547,18 @@ export function createGame(opts = {}) {
 
   // ── 달 넘김 ──
   const SCRIPT = [ // §9 첫 30분 대본: [달, 달 안 진행도, 사건]
-    [3, 0.35, () => raidEvent('청석')],
-    [5, 0.3, () => { state.flags.eventA = true; roninEvent(RONIN[0], 2, true); }],
-    [6, 0.3, eventB],
-    [8, 0.25, eventC],
-    [11, 0.3, eventBeast],
+    // [달, 진행도, 사건, 필요한 기능] — 기능이 안 열렸으면 건너뛰어요(§9 ①: 계기 사건은 해금과 같은 달).
+    [3, 0.35, () => raidEvent('청석'), 'duel'],
+    [5, 0.3, () => { state.flags.eventA = true; roninEvent(RONIN[0], 2, true); }, 'ronin'],
+    [6, 0.3, eventB, 'quest'],
+    [8, 0.25, eventC, 'raid'],
+    [11, 0.3, eventBeast, 'quest'],
     [13, 0.2, () => g.notify('무림대회 공고 — 3달 뒤 열려요. 대표 제자를 키워 보내는 게 다음 목표예요. (무림대회는 다음 업데이트)', { pause: true, kind: 'big' })],
   ];
   function fireScripts(prevProg) {
-    for (const [m, at, fn] of SCRIPT) { const key = 's' + m; if (state.month === m && state.prog >= at && !state.flags[key]) { state.flags[key] = true; fn(); } }
+    for (const [m, at, fn, need] of SCRIPT) { const key = 's' + m; if (state.month === m && state.prog >= at && !state.flags[key]) { state.flags[key] = true; if (!need || g.isOpen(need)) fn(); } }
+    // 첫 달은 '달 넘김'이 없어서, 달 중간(진행 50%)에 해금을 한 번 봐요(순서표 2: 의뢰).
+    if (state.month === 1 && state.prog >= 0.5 && !state.flags.u1) { state.flags.u1 = true; unlocks.onMonthStart(); }
   }
   function monthEnd() {
     const m = state.month;
@@ -539,17 +595,29 @@ export function createGame(opts = {}) {
     for (const p of state.people) if (p.injured > 0) { p.injured--; if (!p.injured) g.log(`${g.name(p)} 부상이 나았어요.`); }
     if (m % 3 === 0) { villageRoll(); sadeulRoll(); }
     if (m === UNLOCK_MONTH) state.flags.monthEnded6 = true;
+    if (!g.isOpen('path')) autoSpend(); // §9 ② 12 전: 수련치는 경맥·무공에 고르게 저절로
     checkUnlock(); checkAchievements();
     // 경고(§5-4 ②-1)
     const next = monthLedger(state, m + 1).net;
     if (next < 0 && !state.flags.warnNeg) { state.flags.warnNeg = true; g.notify(`다음 달 은자 ${next} 예상`, { kind: 'alert' }); } else if (next >= 0) state.flags.warnNeg = false;
-    if (m === 12) g.notify('다음 달 첫해 혜택이 끝나요 → 생활비가 원래대로 돌아와요.', { kind: 'alert' });
     state.month++; state.prog = 0;
+    unlocks.onMonthStart();
+    if (state.month === FIRST_YEAR_MONTHS) g.notify(g.benefitEndText(), { kind: 'alert' }); // §9 ④ 9달 살림 알림(확정)
     bus.emit('month', state.month);
     if (state.month > 5) rollRonin();
     if (state.ronin.revisit && state.month >= state.ronin.revisit.month) { const rv = state.ronin.revisit; state.ronin.revisit = null; if (state.buildings.gaekbang) { state.ronin.stayYear = null; g.notify(`${rv.ronin.name}이(가) 다시 찾아왔어요.`); } }
-    if (state.month > 9 && state.month !== 11 && rng.chance(0.06) && (state.towns['청석'].inf.hd || 0) >= 15) raidEvent('청석');
+    if (g.isOpen('duel') && state.month > 9 && state.month !== 11 && rng.chance(0.06) && (state.towns['청석'].inf.hd || 0) >= 15) raidEvent('청석');
     bus.emit('changed'); bus.emit('autosave');
+  }
+  function autoSpend() {
+    for (const p of state.people) {
+      const art = Object.keys(p.arts).find(a => ARTS[a]) ; let guard = 0;
+      while (guard++ < 6) {
+        const mc = p.meridians < 12 ? g.meridianCost(p) : Infinity, ac = art && (p.arts[art] || 0) < 10 ? g.artCost(p, art) : Infinity;
+        const preferArt = (p.arts[art] || 0) * 2 < p.meridians; const pick = preferArt ? (ac <= p.tp ? 'a' : mc <= p.tp ? 'm' : null) : (mc <= p.tp ? 'm' : ac <= p.tp ? 'a' : null);
+        if (!pick) break; if (pick === 'm') g.openMeridian(p.id); else g.upgradeArt(p.id, art);
+      }
+    }
   }
   g.tick = sec => { // 실제 초 → 게임 진행
     if (!state.introDone || state.speed === 0) return;
@@ -565,12 +633,16 @@ export function createGame(opts = {}) {
   g.advanceMonths = n => { const s = state.speed; state.speed = 1; const tgt = state.month + n; let guard = 0; while (state.month < tgt && guard++ < 10000) { if (state.speed === 0) state.speed = 1; g.tick(SEC_PER_MONTH / 50 / (opts.debugSpeed || 1)); } state.speed = s; };
   g.endIntro = () => { state.introDone = true; bus.emit('changed'); };
   g.serialize = () => { save(); return JSON.stringify(state); };
-  g.load = json => { state = JSON.parse(json); rng.s = state.rngS; bus.emit('loaded'); bus.emit('changed'); };
+  g.load = json => { const r = migrateState(JSON.parse(json)); state = r.state; migrateNotice = r.notice; rng.s = state.rngS; bus.emit('loaded'); bus.emit('changed'); };
   g.ledger = m => monthLedger(state, m || state.month);
   g.bizIncome = (pl, b) => bizIncome(state, pl, b);
   g.living = p => livingCost(state, p, state.month);
   g.stayCost = id => stayCost(state, id);
   g._ev = { roninEvent, rollRonin, monthEnd, roninStayRoll }; // 테스트용
+  const sgn = n => (n >= 0 ? '+' : '−') + Math.abs(n);
+  g.benefitEndText = () => `다음 달부터 옛 의리 혜택이 끝나요 → 수지 ${sgn(monthLedger(state, FIRST_YEAR_MONTHS).net)} → ${sgn(monthLedger(state, FIRST_YEAR_MONTHS + 1).net)}`;
+  g.BUILD_FEATURE = BUILD_FEATURE; g.FIRST_YEAR_MONTHS = FIRST_YEAR_MONTHS;
+  g.taskName = k => k === 'manage' && !g.isOpen('biz_inn') ? '주막 돌보기' : TASKS[k].name;
   g.BUILDINGS = BUILDINGS; g.TASKS = TASKS; g.BIZ = BIZ; g.PROVINCES = PROVINCES;
   return g;
 }

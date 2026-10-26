@@ -18,6 +18,7 @@ export function createMap(canvas, game, ui) {
   const base = document.createElement('canvas'), Q = 1.4; base.width = W * Q; base.height = H * Q;
   const wash = document.createElement('canvas'), WQ = 0.5; wash.width = W * WQ; wash.height = H * WQ;
   const provWash = document.createElement('canvas'); provWash.width = W * WQ; provWash.height = H * WQ;
+  let lastLabelStats = null;
   let level = 0, focus = { prov: 'guizhou', town: '운봉' };
   const cam = { x: W / 2, y: H / 2, s: 0.3 }, target = { ...cam };
   let dirty = true, washDirty = true, pulseT = 0, selected = null;
@@ -156,20 +157,41 @@ export function createMap(canvas, game, ui) {
     if (s < 0.45) { // 천하: 본산 깃발만
       const h = game.place(st.home), p = toScreen(h.x, h.y); flag(p.x, p.y - 18); return;
     }
-    const places = [...Object.values(st.towns), ...Object.values(st.villages)];
+    const all = [...Object.values(st.towns), ...Object.values(st.villages)];
+    const places = all.filter(pl => game.visible(pl.id));
+    // 안개(§9 ②): 아직 안 드러난 곳은 먹안개로 덮고 아이콘·이름·탭 모두 없음
+    for (const pl of all) { if (game.visible(pl.id)) continue; const p = toScreen(pl.x, pl.y); if (p.x < -90 || p.x > vw + 90 || p.y < -90 || p.y > vh + 90) continue;
+      const rr = Math.max(26, 42 * Math.min(1.6, s)); const gr = ctx.createRadialGradient(p.x, p.y, rr * 0.2, p.x, p.y, rr);
+      gr.addColorStop(0, 'rgba(214,204,182,.96)'); gr.addColorStop(0.6, 'rgba(222,212,190,.85)'); gr.addColorStop(1, 'rgba(231,220,195,0)');
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(p.x, p.y, rr, 0, 7); ctx.fill(); }
+    // 이름표 겹침 피하기: 중요한 곳부터 자리 잡고(본산·우리 땅·알림·선택·큰 고을), 겹치면 위·오른쪽·왼쪽 순으로 옮기고 그래도 겹치면 생략. 글자 13px 이상.
+    const prio = pl => (pl.home ? 1e4 : 0) + (pl.owner === 'cw' ? 5e3 : 0) + (ui.alerts?.[pl.id] ? 3e3 : 0) + (selected === pl.id ? 2e3 : 0) + (pl.id === focus.town ? 1e3 : 0) + SIZE_RANK[pl.size] * 10;
+    const taken = [], labels = new Map();
+    const hit = b => taken.some(o => b.x < o.x + o.w && b.x + b.w > o.x && b.y < o.y + o.h && b.y + b.h > o.y);
+    for (const pl of [...places].sort((a, b) => prio(b) - prio(a))) {
+      const p = toScreen(pl.x, pl.y); if (p.x < -40 || p.x > vw + 40 || p.y < -40 || p.y > vh + 40) continue;
+      const isV = pl.size === 'village'; const r = (isV ? 4 : 5 + SIZE_RANK[pl.size] * 1.6) * Math.min(1.8, Math.max(1, s * 0.9));
+      if (isV && s < 0.8) continue;
+      taken.push({ x: p.x - r, y: p.y - r, w: r * 2, h: r * 2 }); // 점 자리도 비워 둠
+      if (isV && s <= 1.1) continue;
+      const fs = Math.max(13, Math.min(17, 11 + s * 2.2)) | 0;
+      ctx.font = `${pl.owner === 'cw' || pl.home ? 700 : 600} ${fs}px "Noto Serif KR",serif`;
+      const w = ctx.measureText(pl.name).width + 4, h = fs + 2;
+      const spots = [[p.x, p.y + r + fs * 0.75], [p.x, p.y - r - fs * 0.75 - (pl.home ? 14 : 0)], [p.x + r + w / 2 + 3, p.y], [p.x - r - w / 2 - 3, p.y]];
+      for (const [x, y] of spots) { const b = { x: x - w / 2, y: y - h / 2, w, h }; if (!hit(b)) { taken.push(b); labels.set(pl.id, { x, y, fs }); break; } }
+    }
+    lastLabelStats = { shown: labels.size, rects: taken.length };
     for (const pl of places) {
       const p = toScreen(pl.x, pl.y); if (p.x < -40 || p.x > vw + 40 || p.y < -40 || p.y > vh + 40) continue;
       const isV = pl.size === 'village'; const rk = SIZE_RANK[pl.size];
       const r = (isV ? 4 : 5 + rk * 1.6) * Math.min(1.8, Math.max(1, s * 0.9));
       if (isV && s < 0.8) { ctx.fillStyle = 'rgba(29,26,22,.45)'; ctx.beginPath(); ctx.arc(p.x, p.y, 2.4, 0, 7); ctx.fill(); continue; }
       icon(p.x, p.y, r, pl, isV);
-      const showName = !isV || s > 1.1;
-      if (showName) {
-        const fs = Math.max(13, Math.min(17, 11 + s * 2.2)) | 0;
-        ctx.font = `${pl.owner === 'cw' || pl.home ? 700 : 600} ${fs}px "Noto Serif KR",serif`;
+      const lb = labels.get(pl.id);
+      if (lb) {
+        ctx.font = `${pl.owner === 'cw' || pl.home ? 700 : 600} ${lb.fs}px "Noto Serif KR",serif`;
         ctx.lineWidth = 3.2; ctx.strokeStyle = 'rgba(239,230,210,.9)';
-        const ny = p.y + r + fs * 0.75;
-        ctx.strokeText(pl.name, p.x, ny); ctx.fillStyle = pl.owner === 'cw' ? '#1f5256' : '#1d1a16'; ctx.fillText(pl.name, p.x, ny);
+        ctx.strokeText(pl.name, lb.x, lb.y); ctx.fillStyle = pl.owner === 'cw' ? '#1f5256' : '#1d1a16'; ctx.fillText(pl.name, lb.x, lb.y);
       }
       if (pl.home) flag(p.x, p.y - r - 8);
       if (pl.holy) { ctx.font = '700 13px serif'; ctx.fillStyle = '#b8893a'; ctx.fillText('聖', p.x + r + 7, p.y - r); }
@@ -221,7 +243,7 @@ export function createMap(canvas, game, ui) {
   canvas.addEventListener('wheel', e => { e.preventDefault(); const w = toWorld(e.offsetX, e.offsetY); if (e.deltaY < 0 && level < 2) { focusAt(w, level + 1); setLevel(level + 1); } else if (e.deltaY > 0 && level > 0) setLevel(level - 1); }, { passive: false });
   function clampCam() { const m = 80; cam.x = target.x = Math.max(m, Math.min(W - m, cam.x)); cam.y = target.y = Math.max(m, Math.min(H - m, cam.y)); }
   function nearest(w, maxPx) { let best = null, bd = 1e9; const s = cam.s;
-    for (const pl of [...Object.values(game.state.towns), ...Object.values(game.state.villages)]) { if (pl.size === 'village' && s < 0.8) continue; const d = Math.hypot(pl.x - w.x, pl.y - w.y) * s; if (d < bd) { bd = d; best = pl; } }
+    for (const pl of [...Object.values(game.state.towns), ...Object.values(game.state.villages)]) { if (pl.size === 'village' && s < 0.8) continue; if (!game.visible(pl.id)) continue; const d = Math.hypot(pl.x - w.x, pl.y - w.y) * s; if (d < bd) { bd = d; best = pl; } }
     return bd <= maxPx ? best : null; }
   function focusAt(w, toLevel) { const P = provinceAt(w.x, w.y); if (toLevel >= 1 && P) focus.prov = P.id; if (toLevel === 2) { const t = nearest(w, 9999); if (t) { focus.town = t.id; focus.prov = t.prov; } } }
   function tap(x, y) {
@@ -238,6 +260,8 @@ export function createMap(canvas, game, ui) {
     clearSel() { selected = null; dirty = true; },
     redrawWash() { washDirty = true; }, redraw() { dirty = true; },
     init() { drawBase(); resize(); setLevel(1, true); },
+    redrawFog() { dirty = true; },
+    labelStats: () => lastLabelStats,
     debug: () => ({ level, cam: { ...cam } }),
   };
 }

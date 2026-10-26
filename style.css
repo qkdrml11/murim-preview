@@ -203,3 +203,9 @@ h4{font:700 16px var(--serif);margin:12px 0 6px;border-bottom:1px solid var(--li
 @media (max-width:360px){.sp .ic{display:none}#tabs button{font-size:14px}.chip{min-width:56px}.hud-date{font-size:17px}}
 html,body{overflow:hidden;position:fixed;inset:0}
 #app{position:fixed;inset:0;height:auto}
+/* 해금(§9): 열리지 않은 기능은 아예 숨김, 막 열린 건 잠깐 반짝 */
+[data-feature][hidden]{display:none!important}
+.feat-pop{animation:featPop 1.2s ease-out 1}
+@keyframes featPop{0%{transform:scale(.6);opacity:0;box-shadow:0 0 0 0 rgba(184,137,58,.8)}50%{transform:scale(1.08);opacity:1}100%{transform:none;box-shadow:0 0 0 12px rgba(184,137,58,0)}}
+.unlock-card h3{color:#b8893a}
+#goal{min-height:44px}

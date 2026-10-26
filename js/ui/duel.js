@@ -114,7 +114,7 @@ export function createDuelUI(game) {
         cards.appendChild(n);
       });
       const tools = q('tools'); tools.innerHTML = '';
-      if (game.state.duels.unlocked) { const ff = el('<button class="btn">⏩ 빨리 감기</button>'); ff.onclick = () => { if (done) return; done = true; end({ ff: true }); }; tools.appendChild(ff); }
+      if (game.isOpen('auto')) { const ff = el('<button class="btn">⏩ 빨리 감기</button>'); ff.onclick = () => { if (done) return; done = true; end({ ff: true }); }; tools.appendChild(ff); }
       function showTip(c) { hideTip(); root.appendChild(el(`<div class="tip" id="tip"><b>${esc(c.name)}</b> ${c.hanja ? esc(c.hanja) : ''} — ${TYPE_NAME[c.type]}(${TYPE_HANJA[c.type]}) · 위력 ${Math.round(c.power * (c.mul || 1))}% · 내력 ${c.cost}<br>공은 변을, 변은 수를, 수는 공을 이겨요.${c.big ? '<br>큰 초식: 원이 줄어들 때 맞춰 누르면 +20%' : ''}<br><small>손을 떼면 시간이 다시 가요.</small></div>`)); }
       function hideTip() { root.querySelector('#tip')?.remove(); }
       function end(v) { done = true; hideTip(); cancelAnimationFrame(raf); res(v); }
