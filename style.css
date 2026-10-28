@@ -209,3 +209,7 @@ html,body{overflow:hidden;position:fixed;inset:0}
 @keyframes featPop{0%{transform:scale(.6);opacity:0;box-shadow:0 0 0 0 rgba(184,137,58,.8)}50%{transform:scale(1.08);opacity:1}100%{transform:none;box-shadow:0 0 0 12px rgba(184,137,58,0)}}
 .unlock-card h3{color:#b8893a}
 #goal{min-height:44px}
+/* 화면 밀림 방지(플레이테스트 03): 닫히는 시트가 #app 아래로 넘쳐 스크롤 영역이 생기고, focus·scrollIntoView(자동 입력)가 #app을 밀어 올렸어요.
+   overflow:clip은 스크롤 컨테이너를 만들지 않아 코드로도 못 밀어요. */
+#app{overflow:clip}
+html,body{overflow:clip;overscroll-behavior:none}

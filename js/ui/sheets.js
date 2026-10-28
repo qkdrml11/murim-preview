@@ -12,7 +12,7 @@ export function createSheets(game, ui) {
   const sheet = document.getElementById('sheet'), body = document.getElementById('sheetBody'), scrim = document.getElementById('scrim');
   let onClose = null; let current = null;
   function open(html, ctx) { body.innerHTML = html; sheet.classList.add('open'); sheet.setAttribute('aria-hidden', 'false'); scrim.classList.add('on'); current = ctx; body.scrollTop = 0; }
-  function close() { sheet.classList.remove('open'); sheet.setAttribute('aria-hidden', 'true'); scrim.classList.remove('on'); current = null; ui.map?.clearSel(); if (onClose) { const f = onClose; onClose = null; f(); } }
+  function close() { if (sheet.contains(document.activeElement)) document.activeElement.blur(); ui.unshift?.(); sheet.classList.remove('open'); sheet.setAttribute('aria-hidden', 'true'); scrim.classList.remove('on'); current = null; ui.map?.clearSel(); if (onClose) { const f = onClose; onClose = null; f(); } }
   scrim.addEventListener('click', () => { close(); ui.closePanel?.(); });
   // 끌어내려 닫기
   let sy = null; sheet.querySelector('.grab').addEventListener('pointerdown', e => { sy = e.clientY; });

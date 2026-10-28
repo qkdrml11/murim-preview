@@ -69,7 +69,37 @@ async function fresh(b, w, h, tag, errs) {
   await p.screenshot({ path: OUT + tag + '_11_fresh_start.png' });
   await ctx.close();
 }
+// 화면 밀림 회귀(플레이테스트 03): 시트 열고 닫기(바깥 탭·버튼·끌어내리기) → 바로 4배, 닫히는 중 focus·scrollIntoView, 가상 키보드(입력칸) — 페이지·#app 스크롤 0, 아래 탭 바닥에 붙음
+async function layout(b, w, h, tag, errs) {
+  const ctx = await b.newContext({ viewport: { width: w, height: h }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+  const p = await ctx.newPage(); p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); }); p.on('pageerror', e => errs.push(String(e)));
+  await p.goto(BASE + '?debug=1&unlock=all'); await sleep(700);
+  { let it = ''; for (let i = 0; i < 6 && await p.locator('.modal .btn').count(); i++) { it += await p.evaluate(() => document.querySelector('.modal').innerText); await p.locator('.modal .btn').first().click(); await sleep(300); } ok(it.includes('은자는 320냥') && !/400냥/.test(it), '인트로 은자 = config 320'); }
+  for (let i = 0; i < 6 && await p.locator('.modal .btn').count(); i++) { await p.locator('.modal .btn').first().tap(); await sleep(300); }
+  const bad = [];
+  const clr = async () => { for (let i = 0; i < 40 && await p.locator('#duel.open').count(); i++) { await handle(p, []); await sleep(250); } for (let i = 0; i < 8 && await p.locator('.modal .btn').count(); i++) { await p.locator('.modal .btn').first().click().catch(() => {}); await sleep(200); } };
+  const m = async tag2 => { await sleep(60); const r = await p.evaluate(() => { const t = document.getElementById('tabs').getBoundingClientRect();
+    return { app: document.getElementById('app').scrollTop, se: document.scrollingElement.scrollTop, y: scrollY, bh: document.body.scrollHeight, hh: document.documentElement.scrollHeight, tb: Math.round(t.bottom), ih: innerHeight }; });
+    if (r.app || r.se || r.y || r.tb !== r.ih || r.bh > r.ih || r.hh > r.ih) bad.push(tag2 + JSON.stringify(r)); };
+  const openS = async () => { await clr(); await p.locator('.pp').first().tap(); await sleep(350); };
+  const scrimTap = async () => { await clr(); return p.locator('#scrim').tap({ position: { x: 10, y: 10 }, timeout: 3000 }).catch(async () => { await clr(); if (await p.locator('#scrim.on').count()) await p.locator('#scrim').tap({ position: { x: 10, y: 10 }, timeout: 3000 }).catch(() => {}); }); };
+  for (let i = 0; i < 3; i++) {
+    await openS(); await m('open'); await scrimTap(); await m('scrim'); await clr(); await p.locator('.sp[data-s="4"]').tap({ timeout: 3000 }).catch(() => {}); await m('4x');
+    await openS(); await p.locator('#sheet .item').first().tap(); await sleep(250); await p.locator('#sheet [data-act=back]').first().tap().catch(() => {}); await sleep(250); await scrimTap(); await clr(); await p.locator('.sp[data-s="4"]').tap({ timeout: 3000 }).catch(() => {}); await m('button+4x');
+    await openS(); const g = await p.locator('#sheet .grab').boundingBox(); await p.mouse.move(g.x + 20, g.y + 5); await p.mouse.down(); await p.mouse.move(g.x + 20, g.y + 200, { steps: 6 }); await p.mouse.up(); await sleep(350); await m('swipe');
+    if (await p.locator('#sheet.open').count()) await scrimTap();
+    await openS(); await p.evaluate(() => document.querySelector('#sheet .item')?.focus()); await m('focus'); await scrimTap(); await sleep(40);
+    await p.evaluate(() => { document.querySelector('#sheet .item')?.focus(); document.querySelector('#sheet .item')?.scrollIntoView(); }); await m('scrollIntoView-closing'); await sleep(400); await m('closed');
+    await openS(); await p.evaluate(() => { const i = document.createElement('input'); i.id = 'kb'; document.getElementById('sheetBody').appendChild(i); i.focus(); }); await p.keyboard.type('ab'); await m('keyboard');
+    await p.evaluate(() => { window.visualViewport?.dispatchEvent(new Event('resize')); window.scrollTo(0, 300); document.getElementById('app').scrollTop = 300; }); await sleep(150); await m('viewport+forced');
+    await scrimTap(); await p.keyboard.press('Tab'); await p.keyboard.press('Tab'); await m('tab-keys');
+  }
+  await p.screenshot({ path: OUT + tag + '_12_after_sheet.png' });
+  ok(bad.length === 0, '시트·4배·포커스·키보드 뒤 화면 밀림 없음 ' + bad.slice(0, 2).join(' '));
+  await ctx.close();
+}
 async function run([w, h]) {
+  if (process.env.LAYOUT_ONLY) { const b = await chromium.launch(); const errs = []; await layout(b, w, h, `${w}x${h}`, errs); ok(errs.length === 0, '콘솔 오류 0 ' + errs.slice(0, 2)); await b.close(); return; }
   const tag = `${w}x${h}`; console.log(`\n■ ${tag}`);
   const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: w, height: h }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
   const p = await ctx.newPage(); const errs = [];
@@ -133,6 +163,7 @@ async function run([w, h]) {
   const q2 = await p.locator('.modal-bg .modal h3').allTextContents().catch(() => []);
   ok(q1 && q2.some(t => t === q1), `새로고침 뒤 묻는 창 다시 뜸 (${q1})`);
   await fresh(b, w, h, tag, errs);
+  await layout(b, w, h, tag, errs);
   ok(errs.length === 0, '콘솔 오류 0 ' + (errs.length ? JSON.stringify(errs.slice(0, 3)) : ''));
   await b.close();
 }

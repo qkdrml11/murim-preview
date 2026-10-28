@@ -3,6 +3,8 @@ import { createGame, isOurSave } from './game.js';
 import { resolveSave, saveKeyFor } from './systems/savekeys.js';
 import { calendar, SEC_PER_MONTH } from './systems/time.js';
 import { FACTIONS } from './data/factions.js';
+import { CONFIG } from './data/config.js';
+import { TASKS, BUILDINGS } from './data/tasks.js';
 import { createMap } from './ui/map.js';
 import { createSheets } from './ui/sheets.js';
 import { createTabs } from './ui/tabs.js';
@@ -61,6 +63,12 @@ function applyFeatures(justOpened) {
 ui.applyFeatures = applyFeatures;
 function recountAlerts() { ui.alertsByProv = {}; for (const id of Object.keys(ui.alerts)) { const pl = game.place(id); if (pl) ui.alertsByProv[pl.prov] = (ui.alertsByProv[pl.prov] || 0) + 1; } map?.redraw(); }
 ui.seenNews = () => $('#newsDot').classList.remove('on');
+// 화면 밀림 방지: 무엇이(포커스·scrollIntoView·가상 키보드) 페이지나 #app을 스크롤해도 바로 0으로 되돌려요.
+const appEl = document.getElementById('app');
+ui.unshift = () => { if (appEl.scrollTop || appEl.scrollLeft) appEl.scrollTop = appEl.scrollLeft = 0; const se = document.scrollingElement; if (se && (se.scrollTop || se.scrollLeft)) se.scrollTop = se.scrollLeft = 0; if (window.scrollY || window.scrollX) window.scrollTo(0, 0); };
+appEl.addEventListener('scroll', ui.unshift); window.addEventListener('scroll', ui.unshift, { passive: true });
+window.visualViewport?.addEventListener('resize', () => setTimeout(ui.unshift, 50));
+document.addEventListener('focusin', () => requestAnimationFrame(ui.unshift));
 function save() { try { localStorage.setItem(SAVE_KEY, game.serialize()); } catch (e) { console.warn('save failed', e); } }
 ui.save = () => { save(); refresh(); };
 ui.resetGame = () => { localStorage.removeItem(SAVE_KEY); location.reload(); }; // 새 키만 지움(v5는 절대 안 지움)
@@ -102,12 +110,12 @@ function goal() { // 목표 한 줄: 지금 열린 기능 안에서만 권해요
   if (s.month === 1 && !s.tasks.length) g = '사람을 눌러 일을 맡겨 보세요 — 수련, 또는 주막 돌보기';
   else if (s.speed === 0 && s.month === 1 && s.prog === 0) g = '아래 [▶ 1배]를 누르면 시간이 흘러요';
   else if (s.flags.sweepPending) g = '숯막골 소탕 — 강호소식에서 2~3명을 보내요';
-  else if (O('biz_inn') && !hasBiz('jumak') && !busyType('openJumak')) g = `${game.name(game.person('p2'))}에게 청석 주막 열기(200냥 · 1달)`;
-  else if (O('quest') && !O('biz_inn') && !busyType('request')) g = '쉬는 제자에게 의뢰 맡기기(30냥) — 운봉 우물';
+  else if (O('biz_inn') && !hasBiz('jumak') && !busyType('openJumak')) g = `${game.name(game.person('p2'))}에게 청석 주막 열기(${TASKS.openJumak.cost}냥 · ${TASKS.openJumak.months}달)`;
+  else if (O('quest') && !O('biz_inn') && !busyType('request')) g = `쉬는 제자에게 의뢰 맡기기(${TASKS.request.cost}냥) — 운봉 우물`;
   else if (O('stay') && s.towns['청석'].owner !== 'cw' && !busyType('stay')) g = `청석에 머물기 — 우리 세력 ${s.towns['청석'].inf.cw || 0}/30, 1위·10 앞서기`;
-  else if (O('biz_pyo') && !hasBiz('pyoguk') && !busyType('openPyoguk')) g = '일류 제자에게 표국 열기(200냥 · 2달)';
-  else if (O('recruit') && !s.achievements.disciples10 && s.people.length < 8 && !busyType('recruit')) g = '장문인으로 제자 모집(150냥) — 후보는 골라 받아요';
-  else if (O('build') && !Object.keys(s.buildings).length && !busyType('build')) g = '본산 짓기 — 수련동(150냥 · 2달)';
+  else if (O('biz_pyo') && !hasBiz('pyoguk') && !busyType('openPyoguk')) g = `일류 제자에게 표국 열기(${TASKS.openPyoguk.cost}냥 · ${TASKS.openPyoguk.months}달)`;
+  else if (O('recruit') && !s.achievements.disciples10 && s.people.length < 8 && !busyType('recruit')) g = `장문인으로 제자 모집(${TASKS.recruit.cost}냥) — 후보는 골라 받아요`;
+  else if (O('build') && !Object.keys(s.buildings).length && !busyType('build')) g = `본산 짓기 — 수련동(${BUILDINGS.suryeondong.cost}냥 · ${BUILDINGS.suryeondong.months}달)`;
   else if (O('tourney')) g = '무림대회 준비 — 대표 제자 수련(참가는 명성 조건 · 다음 업데이트)';
   else if (idle.length) g = `쉬는 사람 ${idle.length}명 — 눌러서 일을 맡겨요`;
   else g = '시간을 흘려 보내요 — 달마다 새 일이 하나씩 열려요';
@@ -125,7 +133,7 @@ ui.afterAssign = () => { if (game.state.month === 1 && game.state.speed === 0) t
 async function intro() {
   const pages = [
     '<span class="big">청운문 淸雲門</span>귀주 산골, 한때 이름 높던 문파가 있었어요. 지금 남은 건 장문인 단청우와 제자 다섯, 그리고 본산 아래 주막 하나.',
-    '흑담채 산적이 청석 고을을 넘보고, 은자는 400냥뿐.<br>그래도 제자들은 떠나지 않았어요. <b>"첫해는 의리로 버티겠습니다."</b>',
+    `흑담채 산적이 청석 고을을 넘보고, 은자는 ${CONFIG.startSilver}냥뿐.<br>그래도 제자들은 떠나지 않았어요. <b>"첫해는 의리로 버티겠습니다."</b>`,
     '하연: <b>"사형제 다섯이 남았습니다. 우선 칼부터 다시 잡지요."</b><br>사람을 눌러 <b>일</b>을 맡겨요. 지금 할 수 있는 일은 <b>수련</b>과 <b>주막 돌보기</b>. 달마다 새 일이 하나씩 열려요.',
   ];
   for (let i = 0; i < pages.length; i++) await modal({ html: `<div class="story">${pages[i]}</div>`, choices: [{ id: 'n', label: i < pages.length - 1 ? '다음' : '시작하기', primary: true }] });
